@@ -22,7 +22,9 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	_cooldown = maxf(0.0, _cooldown - delta)
 	heat = maxf(0.0, heat - weapon_def.cooldown_rate * delta)
-	if not auto_fire and Input.is_action_pressed(fire_action):
+	# Player weapons fire from local input only on the owning peer (M5); drones use
+	# auto_fire (driven by their host-run AI). Single-player has default authority.
+	if not auto_fire and is_multiplayer_authority() and Input.is_action_pressed(fire_action):
 		try_fire()
 
 ## Returns true if a bolt was actually fired (not on cooldown / overheated).

@@ -25,10 +25,18 @@ func _ready() -> void:
 	current_shield = ship_def.shield_max
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Only the peer that owns this ship reads input for it (M5). Single-player has
+	# default authority, so this is always true there — behaviour is unchanged.
+	if not is_multiplayer_authority():
+		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		_mouse_delta += (event as InputEventMouseMotion).relative
 
 func _physics_process(delta: float) -> void:
+	# Remote ships are puppets driven by the network (M5); only the owning peer
+	# simulates. Always true in single-player (default authority).
+	if not is_multiplayer_authority():
+		return
 	if not alive:
 		# Coast to a stop after destruction; controls are dead.
 		velocity = velocity.lerp(Vector3.ZERO, clampf(ship_def.brake_damp * delta, 0.0, 1.0))
