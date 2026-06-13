@@ -5,7 +5,8 @@ Pygame. Boots to a title screen; pick a mode with the mouse, build your own
 universe, and pick up where you left off with **Continue**. Explore the real
 solar system, freely build in Creative, or grow and defend one against incoming
 comets in Survival. Real NASA-based textures, distant galaxies, a Milky Way
-skybox, HDR bloom, day/night Earth, and Saturn's rings. Runs fullscreen.
+skybox, HDR bloom, day/night Earth, and Saturn's rings. Runs fullscreen, with
+synthesized sound effects and soothing ambient music (press **M** to mute).
 
 ![title screen](preview.png)
 
@@ -95,6 +96,7 @@ decade). Developed and tested on an AMD Radeon RX 6600 XT.
 | `Space`            | Pause / resume                          |
 | `H`                | Toggle the help overlay                 |
 | `F11`              | Toggle fullscreen                       |
+| `M`                | Mute / unmute audio                     |
 | `R`                | Reset the camera                        |
 | `Esc`              | Back to the title menu (autosaves)      |
 
@@ -111,6 +113,7 @@ surface.py     first-person surface mode: creatures, loot, crafting
 surface_scene.py  first-person renderer (terrain, sky, sprite creatures)
 terrain.py     procedural heightmap terrain (mountains / valleys)
 profile.py     persistent progression: XP, levels, objectives, unlocks
+audio.py       synthesized sound effects + ambient music (no audio files)
 hud.py         2D text/panel overlay (title, mode badges, hotbar, help)
 sprites.py     procedural galaxy / nebula sprite generation
 mesh.py        sphere / ring / quad geometry

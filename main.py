@@ -16,6 +16,14 @@ from surface import Surface, RECIPE_ORDER, RECIPE_LABEL, RECIPES, WEAPONS, ARMOR
 from surface_scene import SurfaceRenderer, THEME as SURF_THEME
 from terrain import Terrain
 from profile import load_profile, save_profile, OBJECTIVES
+import audio
+
+AUDIO = None
+
+
+def sfx(name):
+    if AUDIO is not None:
+        AUDIO.play(name)
 
 LOOK_SENS = 0.0026
 
@@ -207,7 +215,10 @@ def pick_entity(camera, world, pos, t):
 
 
 def main():
+    global AUDIO
     pygame.init()
+    AUDIO = audio.Audio()
+    AUDIO.start_music()
     fullscreen = True
     ctx, W, H = setup_display(fullscreen)
     camera = Camera(W, H)
@@ -239,15 +250,18 @@ def main():
     toasts = []
     last_kills = 0
     last_inv = {}
+    last_hp = 0.0
 
     def push_toasts(events):
         for e in events:
             if e["kind"] == "objective":
                 toasts.append({"text": f"Objective complete:  {e['text']}   (+{e['xp']} XP)",
                                "col": (150, 255, 180), "t": 4.5})
+                sfx("chime")
             else:
                 u = f"   ·   unlocked {e['unlocked']}" if e.get("unlocked") else ""
                 toasts.append({"text": f"LEVEL {e['level']}!{u}", "col": (255, 225, 130), "t": 5.0})
+                sfx("levelup")
 
     def award(metric, n=1, snapshot=None):
         push_toasts(prof.record(metric, n, snapshot))
@@ -265,7 +279,7 @@ def main():
         state = "title"
 
     def land_on(b):
-        nonlocal surf, surf_renderer, state, last_kills, last_inv
+        nonlocal surf, surf_renderer, state, last_kills, last_inv, last_hp
         kind = planet_kind_from_body(b)
         amp = SURF_THEME.get(kind, SURF_THEME["rocky"])[3]
         surf = Surface(kind)
@@ -278,7 +292,9 @@ def main():
         pygame.mouse.get_rel()
         last_kills = 0
         last_inv = {}
+        last_hp = surf.hp
         state = "surface"
+        sfx("warp")
         award("lands")
 
     while True:
@@ -313,11 +329,19 @@ def main():
             if surf.kills > last_kills:
                 award("kills", surf.kills - last_kills)
                 last_kills = surf.kills
+                sfx("kill")
+            _picked = False
             for _it, _cnt in surf.inv.items():
                 _d = _cnt - last_inv.get(_it, 0)
                 if _d > 0:
                     award("mat_" + _it, _d)
+                    _picked = True
+            if _picked:
+                sfx("pickup")
             last_inv = dict(surf.inv)
+            if surf.hp < last_hp - 0.01:
+                sfx("hurt")
+            last_hp = surf.hp
         else:
             title_time += dt * 0.3
             camera.yaw += dt * 3.0
@@ -374,11 +398,15 @@ def main():
                         pygame.mouse.set_visible(True)
                         state = "playing"
                     elif event.key == pygame.K_SPACE:
+                        if surf.air <= 0.01 and not surf.dead:
+                            sfx("jump")
                         surf.jump()
+                    elif event.key == pygame.K_m:
+                        AUDIO.toggle_mute()
                     elif event.key in (pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5):
                         idx = [pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5].index(event.key)
                         if idx < len(RECIPE_ORDER) and surf.craft(RECIPE_ORDER[idx]):
-                            award("crafted_" + RECIPE_ORDER[idx])
+                            award("crafted_" + RECIPE_ORDER[idx]); sfx("craft")
                     continue
 
                 if event.key == pygame.K_F11:
@@ -388,6 +416,8 @@ def main():
                     hud = Hud(ctx); hud.resize(W, H)
                     camera.resize(W, H)
                     surf_renderer = None
+                elif event.key == pygame.K_m:
+                    AUDIO.toggle_mute()
                 elif event.key == pygame.K_ESCAPE:
                     if state == "playing":
                         if net is not None:
@@ -435,6 +465,7 @@ def main():
                 if state == "surface":
                     if event.button == 1:
                         surf.attack()
+                        sfx("swing")
                     continue
                 if event.button == 1:
                     dragging = True; moved = 0.0
@@ -460,6 +491,7 @@ def main():
                         elif state == "title":
                             for rect, action, _lbl, enabled in title_button_rects(W, H, has_save()):
                                 if enabled and point_in(rect, event.pos):
+                                    sfx("click")
                                     if action == "quit":
                                         pygame.quit(); sys.exit()
                                     elif action == "continue":
@@ -551,17 +583,17 @@ def handle_play_click(camera, world, pos, selected, sim_time, W, H, net, prof, a
     if eid is not None:
         cmd = {"type": "harvest", "eid": eid}
         if net is not None:
-            net.send_cmd(cmd); award("harvested")
+            net.send_cmd(cmd); award("harvested"); sfx("harvest")
         elif world.apply(cmd):
-            award("harvested")
+            award("harvested"); sfx("harvest")
         return selected
     if world.threats_enabled:
         cid = pick_comet(camera, world, pos)
         if cid is not None:
             if net is not None:
-                net.send_cmd({"type": "deflect", "cid": cid}); award("deflects")
+                net.send_cmd({"type": "deflect", "cid": cid}); award("deflects"); sfx("deflect")
             elif world.deflect(cid):
-                world.notify("Comet deflected"); award("deflects")
+                world.notify("Comet deflected"); award("deflects"); sfx("deflect")
             return selected
     if world.mode in ("creative", "survival"):
         if world.mode == "survival" and not prof.unlocked(selected):
@@ -572,10 +604,11 @@ def handle_play_click(camera, world, pos, selected, sim_time, W, H, net, prof, a
             cmd = {"type": "place", "body": selected, "x": float(hit[0]),
                    "z": float(hit[2]), "t": sim_time}
             if net is not None:
-                net.send_cmd(cmd); award("placed", snapshot=len(world.planets()) + 1)
+                net.send_cmd(cmd); award("placed", snapshot=len(world.planets()) + 1); sfx("place")
             elif world.apply(cmd):
                 award("placed")
                 award("max_planets", snapshot=len(world.planets()))
+                sfx("place")
     return selected
 
 
@@ -609,7 +642,7 @@ def draw_title(hud, W, H, save_exists, mouse, prof=None):
                         16, (150, 230, 180), "body")
     for rect, action, label, enabled in title_button_rects(W, H, save_exists):
         _draw_button(hud, rect, label, enabled and point_in(rect, mouse), enabled)
-    hud.text_center(W // 2, H - 38, "Click an option  ·  F11 fullscreen  ·  Esc quit", 16,
+    hud.text_center(W // 2, H - 38, "Click an option  ·  F11 fullscreen  ·  M mute  ·  Esc quit", 16,
                     (150, 160, 178), "body")
     hud.end()
 
@@ -857,7 +890,7 @@ def draw_surface_hud(hud, surf, W, H, surf_renderer=None, prof=None, toasts=None
     hud.panel(cx - 10, cy - 1, 20, 2, ch)
 
     hud.text(14, 12,
-             "WASD move  ·  Space jump  ·  Ctrl crouch  ·  click attack  ·  1-5 craft  ·  Esc leave",
+             "WASD move  ·  Space jump  ·  Ctrl crouch  ·  click attack  ·  1-5 craft  ·  M mute  ·  Esc leave",
              15, (165, 175, 195), "body")
 
     # Day / night indicator.
