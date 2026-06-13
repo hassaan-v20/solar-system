@@ -5,12 +5,14 @@ extends CharacterBody3D
 ## All tuning comes from ShipDef; no magic numbers here (GDD §30.3).
 
 @export var ship_def: ShipDef
+@export var invert_pitch: bool = false   # gamepad right-stick pitch preference
 
 var current_hull: float = 0.0
 var current_shield: float = 0.0
 var is_boosting: bool = false
 var alive: bool = true
 var weapon: WeaponController   # set by main when the ship is assembled
+var cargo: CargoSystem         # set by main when the ship is assembled
 
 var _mouse_delta: Vector2 = Vector2.ZERO
 
@@ -36,11 +38,22 @@ func _physics_process(delta: float) -> void:
 	_translate(delta)
 
 func _steer(delta: float) -> void:
-	# Mouse steers the nose (yaw + pitch); A/D roll the hull.
+	# Mouse steers the nose (yaw + pitch) via accumulated motion this frame.
 	var sens := 0.0022 * ship_def.turn_speed
 	rotate_object_local(Vector3.UP, -_mouse_delta.x * sens)
 	rotate_object_local(Vector3.RIGHT, -_mouse_delta.y * sens)
 	_mouse_delta = Vector2.ZERO
+
+	# Gamepad right stick steers too, as a turn rate (turn_speed in rad/s). Matches
+	# the mouse's directions; pitch can be inverted per player preference.
+	var stick := Vector2(
+		Input.get_axis("look_left", "look_right"),
+		Input.get_axis("look_down", "look_up"))
+	if stick != Vector2.ZERO:
+		var pitch_dir := -1.0 if invert_pitch else 1.0
+		rotate_object_local(Vector3.UP, -stick.x * ship_def.turn_speed * delta)
+		rotate_object_local(Vector3.RIGHT, stick.y * pitch_dir * ship_def.turn_speed * delta)
+
 	var roll_input := Input.get_axis("roll_right", "roll_left")
 	rotate_object_local(Vector3.FORWARD, roll_input * ship_def.roll_speed * delta)
 

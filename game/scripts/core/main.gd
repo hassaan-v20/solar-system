@@ -13,8 +13,6 @@ const LAYER_ENVIRONMENT := 1   # asteroids / debris
 const LAYER_PLAYER_SHIP := 2
 const LAYER_ENEMY := 4
 
-const DRONE_COUNT := 3
-
 var _rng := RandomNumberGenerator.new()
 var _want_capture := true
 var _ship: ShipController
@@ -33,7 +31,11 @@ func _ready() -> void:
 	_build_camera(_ship)
 	_build_hud(_ship)
 	_build_asteroids()
-	_build_enemies(_ship)
+	var mdef: MissionDef = load("res://data/missions/ghost_station.tres")
+	if mdef == null:
+		mdef = MissionDef.new()
+	var dock := _build_station(mdef.station_distance)
+	_build_mission(_ship, dock, mdef)
 	EventBus.ship_destroyed.connect(_on_ship_destroyed)
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -82,6 +84,7 @@ func _setup_input() -> void:
 		"roll_right": [KEY_D],
 		"boost": [KEY_SHIFT],
 		"brake": [KEY_CTRL],
+		"dock": [KEY_F],
 		"toggle_mouse": [KEY_ESCAPE],
 		"toggle_fullscreen": [KEY_F11],
 		"quit_game": [KEY_F8],
@@ -100,6 +103,48 @@ func _setup_input() -> void:
 	var fire_ev := InputEventMouseButton.new()
 	fire_ev.button_index = MOUSE_BUTTON_LEFT
 	InputMap.action_add_event("fire_primary", fire_ev)
+
+	_setup_gamepad()
+
+## Gamepad (DualSense and any SDL-mapped pad). Bound to the SAME actions as the
+## keyboard/mouse, so both work at once — only the right stick needs new code
+## (see ShipController._steer). Pilot layer only; co-op roles come in M5.
+func _setup_gamepad() -> void:
+	# Digital actions → face/shoulder buttons. (PlayStation: A=Cross, B=Circle.)
+	var pad_buttons := {
+		"roll_left": JOY_BUTTON_LEFT_SHOULDER,    # L1
+		"roll_right": JOY_BUTTON_RIGHT_SHOULDER,  # R1
+		"brake": JOY_BUTTON_B,                     # Circle
+		"dock": JOY_BUTTON_A,                      # Cross
+	}
+	for action in pad_buttons:
+		var be := InputEventJoypadButton.new()
+		be.button_index = pad_buttons[action]
+		InputMap.action_add_event(action, be)
+
+	# Analog actions → stick/trigger axes, as [axis, direction]. Left stick flies,
+	# right stick steers (look_* are new, gamepad-only), triggers fire/boost.
+	var pad_axes := {
+		"thrust_forward": [JOY_AXIS_LEFT_Y, -1.0],
+		"thrust_back": [JOY_AXIS_LEFT_Y, 1.0],
+		"strafe_left": [JOY_AXIS_LEFT_X, -1.0],
+		"strafe_right": [JOY_AXIS_LEFT_X, 1.0],
+		"look_left": [JOY_AXIS_RIGHT_X, -1.0],
+		"look_right": [JOY_AXIS_RIGHT_X, 1.0],
+		"look_up": [JOY_AXIS_RIGHT_Y, -1.0],
+		"look_down": [JOY_AXIS_RIGHT_Y, 1.0],
+		"boost": [JOY_AXIS_TRIGGER_LEFT, 1.0],     # L2
+		"fire_primary": [JOY_AXIS_TRIGGER_RIGHT, 1.0],  # R2
+	}
+	for action in pad_axes:
+		if not InputMap.has_action(action):
+			InputMap.add_action(action)
+		var me := InputEventJoypadMotion.new()
+		me.axis = pad_axes[action][0]
+		me.axis_value = pad_axes[action][1]
+		InputMap.action_add_event(action, me)
+		# Lower than the 0.5 default so the sticks/triggers feel responsive.
+		InputMap.action_set_deadzone(action, 0.2)
 
 # ── world ─────────────────────────────────────────────────────────────────────
 func _build_environment() -> void:
@@ -193,6 +238,11 @@ func _build_ship() -> ShipController:
 	ship.add_child(wc)
 	ship.weapon = wc
 
+	# Cargo hold (carries the Data Core / salvage this run).
+	var cargo := CargoSystem.new()
+	ship.add_child(cargo)
+	ship.cargo = cargo
+
 	add_child(ship)
 	return ship
 
@@ -250,16 +300,56 @@ func _build_asteroids() -> void:
 
 		add_child(body)
 
-func _build_enemies(ship: ShipController) -> void:
-	var def := load("res://data/enemies/light_drone.tres")
-	for i in DRONE_COUNT:
-		var drone := EnemyDrone.new()
-		if def is EnemyDef:
-			drone.enemy_def = def
-		drone.target = ship
-		# Spread the drones out in front of / around the spawn point.
-		drone.position = _random_unit() * _rng.randf_range(55.0, 95.0)
-		add_child(drone)
+## Builds the derelict station (placeholder primitives) and returns its docking
+## zone so the MissionManager can wire the dock objective to it.
+func _build_station(distance: float) -> ShipZone:
+	var station := Node3D.new()
+	station.position = Vector3(0, 0, -distance)   # straight ahead of the spawn point
+	add_child(station)
+
+	var hull_mat := StandardMaterial3D.new()
+	hull_mat.albedo_color = Color(0.18, 0.2, 0.24)
+	hull_mat.metallic = 0.7
+	hull_mat.roughness = 0.6
+
+	# Central spine.
+	var core := MeshInstance3D.new()
+	var core_mesh := CylinderMesh.new()
+	core_mesh.top_radius = 6.0
+	core_mesh.bottom_radius = 6.0
+	core_mesh.height = 46.0
+	core.mesh = core_mesh
+	core.material_override = hull_mat
+	station.add_child(core)
+
+	# A few protruding modules so the silhouette reads as a structure, not a pole.
+	for spec in [Vector3(14, 6, 0), Vector3(-12, -8, 4), Vector3(0, 14, -10)]:
+		var mod := MeshInstance3D.new()
+		var box := BoxMesh.new()
+		box.size = Vector3(10, 6, 8)
+		mod.mesh = box
+		mod.material_override = hull_mat
+		mod.position = spec
+		station.add_child(mod)
+
+	# Dim red running lights so the derelict is findable in the dark sector.
+	var beacon := OmniLight3D.new()
+	beacon.light_color = Color(1.0, 0.3, 0.25)
+	beacon.light_energy = 3.0
+	beacon.omni_range = 60.0
+	station.add_child(beacon)
+
+	var dock := ShipZone.new()
+	dock.radius = 26.0
+	dock.marker_color = Color(0.3, 0.7, 1.0)
+	station.add_child(dock)
+	return dock
+
+func _build_mission(ship: ShipController, dock: ShipZone, mdef: MissionDef) -> void:
+	var mm := MissionManager.new()
+	mm.mission_def = mdef
+	mm.setup(ship, ship.cargo, dock)
+	add_child(mm)
 
 func _on_ship_destroyed() -> void:
 	if _ship == null:
