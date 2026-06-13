@@ -4,7 +4,6 @@ from pathlib import Path
 import moderngl
 import numpy as np
 import pyrr
-from PIL import Image
 
 from mesh import (
     create_fullscreen_quad,
@@ -12,34 +11,21 @@ from mesh import (
     create_ring,
     create_sphere,
 )
+from world import ORBIT_SPEED, body_world_pos
 
 SHADER_DIR = Path(__file__).parent / "shaders"
 TEX_DIR = Path(__file__).parent / "textures"
 
-# (name, texture, radius, dist, period_yrs, tilt_deg, special)
-PLANETS = [
-    ("Sun",     "2k_sun.jpg",           5.00,  0.0,   0.000,   7.25, "sun"),
-    ("Mercury", "2k_mercury.jpg",       0.40,  9.5,   0.241,   0.03, None),
-    ("Venus",   "2k_venus_surface.jpg", 0.95, 14.5,   0.615, 177.40, None),
-    ("Earth",   "2k_earth_daymap.jpg",  1.00, 20.0,   1.000,  23.44, "earth"),
-    ("Mars",    "2k_mars.jpg",          0.53, 27.0,   1.881,  25.19, None),
-    ("Jupiter", "2k_jupiter.jpg",       3.20, 39.0,  11.862,   3.13, None),
-    ("Saturn",  "2k_saturn.jpg",        2.60, 54.0,  29.457,  26.73, "saturn"),
-    ("Uranus",  "2k_uranus.jpg",        1.80, 67.0,  84.011,  97.77, None),
-    ("Neptune", "2k_neptune.jpg",       1.75, 80.0, 164.795,  28.32, None),
-]
-
-ORBIT_SPEED   = 0.3    # simulation years per real second at speed 1.0
-RING_INNER    = 1.45   # Saturn ring inner radius, in planet radii
-RING_OUTER    = 2.55   # Saturn ring outer radius, in planet radii
+RING_INNER    = 1.45
+RING_OUTER    = 2.55
 EARTH_ATMO    = (0.30, 0.55, 1.00)
 BLOOM_ITERS   = 5
-SKYBOX_RADIUS = 900.0
 
-# Moon: orbit radius (in Earth radii), body radius, orbital period (sim years)
 MOON_DIST   = 2.4
 MOON_RADIUS = 0.27
 MOON_PERIOD = 0.075
+
+IDENTITY = pyrr.matrix44.create_identity(dtype="f4")
 
 
 class SolarSystem:
@@ -51,7 +37,7 @@ class SolarSystem:
         self._load_programs()
         self._build_geometry()
         self._build_textures()
-        print("Solar system ready.  drag = orbit   scroll = zoom   +/- = speed   Space = pause   R = reset")
+        print("Renderer ready.")
 
     # ── shaders ──────────────────────────────────────────────────────────────
     def _load_programs(self):
@@ -69,16 +55,9 @@ class SolarSystem:
 
     # ── geometry ─────────────────────────────────────────────────────────────
     def _full_vao(self, prog, vbo, ibo):
-        # in_position / in_normal / in_texcoord
         return self.ctx.vertex_array(
-            prog,
-            [(vbo, "3f 3f 2f", "in_position", "in_normal", "in_texcoord")],
-            ibo,
+            prog, [(vbo, "3f 3f 2f", "in_position", "in_normal", "in_texcoord")], ibo
         )
-
-    def _pos_only_vao(self, prog, vbo, ibo):
-        # Skybox shader uses only in_position; pad past normal+uv (20 bytes).
-        return self.ctx.vertex_array(prog, [(vbo, "3f 20x", "in_position")], ibo)
 
     def _build_geometry(self):
         verts, idx = create_sphere(96)
@@ -86,23 +65,18 @@ class SolarSystem:
         sibo = self.ctx.buffer(idx.tobytes())
         self.sphere_planet = self._full_vao(self.prog_planet, svbo, sibo)
         self.sphere_cloud  = self._full_vao(self.prog_cloud, svbo, sibo)
-        self.sphere_sky    = self._pos_only_vao(self.prog_sky, svbo, sibo)
+        self.sphere_sky    = self.ctx.vertex_array(
+            self.prog_sky, [(svbo, "3f 20x", "in_position")], sibo
+        )
 
-        sat_r = next(p[2] for p in PLANETS if p[0] == "Saturn")
-        rverts, ridx = create_ring(sat_r * RING_INNER, sat_r * RING_OUTER, 192)
+        rverts, ridx = create_ring(RING_INNER, RING_OUTER, 192)
         rvbo = self.ctx.buffer(rverts.tobytes())
         ribo = self.ctx.buffer(ridx.tobytes())
         self.ring_vao = self._full_vao(self.prog_ring, rvbo, ribo)
 
-        self.orbit_vaos = []
-        for _, _, _, dist, *_ in PLANETS:
-            if dist == 0.0:
-                self.orbit_vaos.append(None)
-                continue
-            vbo = self.ctx.buffer(create_orbit_circle(dist, 256).tobytes())
-            self.orbit_vaos.append(
-                self.ctx.vertex_array(self.prog_line, [(vbo, "3f", "in_position")])
-            )
+        # Unit circle, scaled per-orbit via the line shader's model matrix.
+        cvbo = self.ctx.buffer(create_orbit_circle(1.0, 256).tobytes())
+        self.circle_vao = self.ctx.vertex_array(self.prog_line, [(cvbo, "3f", "in_position")])
 
         quad = self.ctx.buffer(create_fullscreen_quad().tobytes())
         self.quad_bright = self.ctx.vertex_array(self.prog_bright, [(quad, "2f", "in_position")])
@@ -111,11 +85,10 @@ class SolarSystem:
 
     # ── textures ─────────────────────────────────────────────────────────────
     def _load(self, name, alpha=False):
+        from PIL import Image
         img = Image.open(TEX_DIR / name)
-        img = img.convert("RGBA" if alpha else "RGB")
-        img = img.transpose(Image.FLIP_TOP_BOTTOM)  # PIL top-left -> GL bottom-left
-        comps = 4 if alpha else 3
-        tex = self.ctx.texture(img.size, comps, img.tobytes())
+        img = img.convert("RGBA" if alpha else "RGB").transpose(Image.FLIP_TOP_BOTTOM)
+        tex = self.ctx.texture(img.size, 4 if alpha else 3, img.tobytes())
         tex.build_mipmaps()
         tex.filter = (moderngl.LINEAR_MIPMAP_LINEAR, moderngl.LINEAR)
         try:
@@ -125,14 +98,15 @@ class SolarSystem:
         return tex
 
     def _build_textures(self):
-        self.textures = [self._load(p[1]) for p in PLANETS]
-        self.tex_skybox = self._load("8k_stars_milky_way.jpg")
-        self.tex_night  = self._load("2k_earth_nightmap.jpg")
-        self.tex_cloud  = self._load("2k_earth_clouds.jpg")
-        self.tex_ring   = self._load("2k_saturn_ring_alpha.png", alpha=True)
-        self.tex_moon   = self._load("2k_moon.jpg")
+        self.tex = {}
+        for path in TEX_DIR.glob("*"):
+            if path.suffix.lower() in (".jpg", ".jpeg", ".png"):
+                self.tex[path.name] = self._load(path.name, alpha=path.suffix.lower() == ".png")
 
-    # ── framebuffers (bloom pipeline) ──────────────────────────────────────────
+    def _get_tex(self, name):
+        return self.tex.get(name) or self.tex.get("2k_moon.jpg")
+
+    # ── framebuffers (bloom) ───────────────────────────────────────────────────
     def resize(self, width, height):
         width, height = max(1, width), max(1, height)
         if (width, height) == self.fbo_size:
@@ -164,7 +138,7 @@ class SolarSystem:
             self.pp_fbos.append(self.ctx.framebuffer([t]))
 
     # ── render ──────────────────────────────────────────────────────────────
-    def render(self, camera, time: float):
+    def render(self, world, camera, time, preview=None):
         if self.scene_fbo is None:
             self.resize(camera.width, camera.height)
 
@@ -176,26 +150,35 @@ class SolarSystem:
         self.scene_fbo.use()
         ctx.clear(0.0, 0.0, 0.0)
 
-        # Galaxy skybox: drawn first, never writes depth.
+        # Galaxy skybox.
         ctx.disable(moderngl.DEPTH_TEST)
         ctx.depth_mask = False
         self.prog_sky["view"].write(view)
         self.prog_sky["proj"].write(proj)
         self.prog_sky["tex"].value = 0
-        self.tex_skybox.use(0)
+        self._get_tex("8k_stars_milky_way.jpg").use(0)
         self.sphere_sky.render()
         ctx.depth_mask = True
         ctx.enable(moderngl.DEPTH_TEST)
 
-        # Orbit guide rings.
+        # Orbit guide rings (one per living, orbiting body).
         self.prog_line["view"].write(view)
         self.prog_line["proj"].write(proj)
-        self.prog_line["color"].value = (0.30, 0.32, 0.55, 0.18)
-        for vao in self.orbit_vaos:
-            if vao:
-                vao.render(moderngl.LINE_STRIP)
+        self.prog_line["color"].value = (0.30, 0.32, 0.55, 0.16)
+        for b in world.bodies:
+            if b.alive and b.dist > 0.0:
+                self.prog_line["model"].write(self._scale(b.dist))
+                self.circle_vao.render(moderngl.LINE_STRIP)
 
-        # Planets and Sun.
+        # Placement preview ring + marker.
+        if preview is not None:
+            ok = preview["ok"]
+            col = (0.3, 1.0, 0.8, 0.7) if ok else (1.0, 0.3, 0.3, 0.7)
+            self.prog_line["color"].value = col
+            self.prog_line["model"].write(self._scale(preview["dist"]))
+            self.circle_vao.render(moderngl.LINE_STRIP)
+
+        # Bodies.
         p = self.prog_planet
         p["view"].write(view)
         p["proj"].write(proj)
@@ -205,50 +188,64 @@ class SolarSystem:
         p["night_tex"].value = 1
         p["atmo_color"].value = EARTH_ATMO
 
-        earth_pos = None
-        earth_radius = 1.0
-        saturn = None
-
-        for i, (name, _tex, radius, dist, period, tilt, special) in enumerate(PLANETS):
-            pos = self._orbital_pos(dist, period, time)
-            p["model"].write(self._body_model(pos, radius, tilt, time, period))
-            p["emit"].value = 6.0 if special == "sun" else 0.0
-            p["is_earth"].value = 1 if special == "earth" else 0
-            self.textures[i].use(0)
-            if special == "earth":
-                self.tex_night.use(1)
-                earth_pos, earth_radius = pos, radius
+        earths = []
+        saturns = []
+        for b in world.bodies:
+            if not b.alive:
+                continue
+            pos = np.array(body_world_pos(b, time), dtype="f4")
+            p["model"].write(self._body_model(pos, b.radius, b.tilt, time, b.period))
+            p["emit"].value = 6.0 if b.special == "sun" else 0.0
+            p["is_earth"].value = 1 if b.special == "earth" else 0
+            self._get_tex(b.texture).use(0)
+            if b.special == "earth":
+                self._get_tex("2k_earth_nightmap.jpg").use(1)
+                earths.append((pos, b.radius))
             self.sphere_planet.render()
-            if special == "saturn":
-                saturn = (pos, radius, tilt)
+            if b.special == "saturn":
+                saturns.append((pos, b.radius, b.tilt))
 
-        # Earth's Moon.
-        if earth_pos is not None:
+        # Comets — small glowing heads (bloom makes them streak nicely).
+        for c in world.comets:
+            pos = np.array([c.x, c.y, c.z], dtype="f4")
+            p["model"].write(self._body_model(pos, 0.32, 0.0, time, 0.05))
+            p["emit"].value = 2.2
+            p["is_earth"].value = 0
+            self._get_tex("2k_moon.jpg").use(0)
+            self.sphere_planet.render()
+
+        # Preview body marker (glowing ghost at the cursor).
+        if preview is not None:
+            pos = np.array([preview["x"], 0.0, preview["z"]], dtype="f4")
+            p["model"].write(self._body_model(pos, preview["radius"], 0.0, time, 0.2))
+            p["emit"].value = 1.1 if preview["ok"] else 0.4
+            p["is_earth"].value = 0
+            self._get_tex("2k_moon.jpg").use(0)
+            self.sphere_planet.render()
+
+        # Moons + cloud shells for earth-like bodies.
+        for pos, radius in earths:
             ang = 2.0 * math.pi * time * ORBIT_SPEED / MOON_PERIOD
-            moon_pos = earth_pos + np.array(
-                [MOON_DIST * math.cos(ang), 0.0, MOON_DIST * math.sin(ang)], dtype="f4"
-            )
-            p["model"].write(self._body_model(moon_pos, MOON_RADIUS, 6.7, time, MOON_PERIOD))
+            moon = pos + np.array([MOON_DIST * math.cos(ang), 0.0, MOON_DIST * math.sin(ang)], dtype="f4")
+            p["model"].write(self._body_model(moon, MOON_RADIUS, 6.7, time, MOON_PERIOD))
             p["emit"].value = 0.0
             p["is_earth"].value = 0
-            self.tex_moon.use(0)
+            self._get_tex("2k_moon.jpg").use(0)
             self.sphere_planet.render()
 
-            # Cloud shell, slightly larger than Earth.
             ctx.depth_mask = False
             c = self.prog_cloud
             c["view"].write(view)
             c["proj"].write(proj)
             c["sun_pos"].value = (0.0, 0.0, 0.0)
             c["tex"].value = 0
-            c["model"].write(self._body_model(earth_pos, earth_radius * 1.015, 23.44, time, 0.9))
-            self.tex_cloud.use(0)
+            c["model"].write(self._body_model(pos, radius * 1.015, 23.44, time, 0.9))
+            self._get_tex("2k_earth_clouds.jpg").use(0)
             self.sphere_cloud.render()
             ctx.depth_mask = True
 
-        # Saturn's rings (transparent, drawn last).
-        if saturn is not None:
-            spos, sradius, stilt = saturn
+        # Saturn rings.
+        for spos, sradius, stilt in saturns:
             ctx.depth_mask = False
             r = self.prog_ring
             r["view"].write(view)
@@ -259,21 +256,21 @@ class SolarSystem:
             r["tex"].value = 0
             T = pyrr.matrix44.create_from_translation(spos, dtype="f4")
             Z = pyrr.matrix44.create_from_z_rotation(math.radians(stilt), dtype="f4")
-            r["model"].write(T @ Z)
-            self.tex_ring.use(0)
+            S = pyrr.matrix44.create_from_scale([sradius] * 3, dtype="f4")
+            r["model"].write(T @ Z @ S)
+            self._get_tex("2k_saturn_ring_alpha.png").use(0)
             self.ring_vao.render()
             ctx.depth_mask = True
 
         self._bloom_and_present()
 
-    # ── bloom post-processing ──────────────────────────────────────────────────
+    # ── bloom ───────────────────────────────────────────────────────────────
     def _bloom_and_present(self):
         ctx = self.ctx
         ctx.disable(moderngl.DEPTH_TEST)
         ctx.disable(moderngl.BLEND)
         hw, hh = self.pp_half
 
-        # Bright-pass extract into pp[0].
         self.pp_fbos[0].use()
         ctx.clear(0.0, 0.0, 0.0)
         self.prog_bright["scene"].value = 0
@@ -281,7 +278,6 @@ class SolarSystem:
         self.scene_color.use(0)
         self.quad_bright.render(moderngl.TRIANGLE_STRIP)
 
-        # Separable Gaussian blur, ping-ponging pp[0] <-> pp[1].
         self.prog_blur["image"].value = 0
         src, dst = 0, 1
         for _ in range(BLOOM_ITERS):
@@ -293,7 +289,6 @@ class SolarSystem:
                 self.quad_blur.render(moderngl.TRIANGLE_STRIP)
                 src, dst = dst, src
 
-        # Composite scene + bloom to the screen with tone mapping.
         ctx.screen.use()
         ctx.clear(0.0, 0.0, 0.0)
         self.prog_comp["scene"].value = 0
@@ -307,11 +302,8 @@ class SolarSystem:
         ctx.enable(moderngl.DEPTH_TEST)
 
     # ── helpers ────────────────────────────────────────────────────────────────
-    def _orbital_pos(self, dist, period, time):
-        if dist == 0.0:
-            return np.zeros(3, dtype="f4")
-        angle = 2.0 * math.pi * time * ORBIT_SPEED / period
-        return np.array([dist * math.cos(angle), 0.0, dist * math.sin(angle)], dtype="f4")
+    def _scale(self, s):
+        return pyrr.matrix44.create_from_scale([s, s, s], dtype="f4")
 
     def _body_model(self, pos, radius, tilt, time, period):
         spin = time * (0.4 if period == 0.0 else 2.0 / max(period, 0.001))

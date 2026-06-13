@@ -52,3 +52,30 @@ class Camera:
         return pyrr.matrix44.create_perspective_projection_matrix(
             45.0, self.width / max(1, self.height), 0.5, 1500.0, dtype="f4"
         )
+
+    def screen_ray(self, mx, my):
+        """Unproject a pixel into a world-space ray (origin, direction)."""
+        ndc_x = 2.0 * mx / self.width - 1.0
+        ndc_y = 1.0 - 2.0 * my / self.height
+        # pyrr arrays are row-major; transpose to the column-vector matrices GL uses.
+        view = self.get_view_matrix().T
+        proj = self.get_projection_matrix().T
+        inv = np.linalg.inv(proj @ view)
+
+        near = inv @ np.array([ndc_x, ndc_y, -1.0, 1.0], dtype="f8")
+        far = inv @ np.array([ndc_x, ndc_y, 1.0, 1.0], dtype="f8")
+        near = near[:3] / near[3]
+        far = far[:3] / far[3]
+        direction = far - near
+        direction /= np.linalg.norm(direction)
+        return self.position.astype("f8"), direction
+
+    def ground_hit(self, mx, my):
+        """Where the cursor ray meets the orbital plane (y=0), or None."""
+        origin, d = self.screen_ray(mx, my)
+        if abs(d[1]) < 1e-6:
+            return None
+        t = -origin[1] / d[1]
+        if t < 0:
+            return None
+        return origin + d * t
