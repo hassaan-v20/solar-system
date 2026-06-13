@@ -25,6 +25,11 @@ Switch any time with **F1 / F2 / F3**:
 From the title screen, **Continue** resumes your saved game, or start a fresh one
 in any mode. Your game autosaves when you return to the menu (Esc).
 
+**Life & relics:** in Creative and Survival, your planets grow interactive
+entities — **life** (green), **crystals** (cyan), and rare **relics** (gold) —
+that orbit them. Click one to harvest it for energy and score; it regrows after
+a while. In co-op, anyone can harvest, so there's plenty to do together.
+
 ![build mode](build.png)
 
 ## Run it
@@ -83,15 +88,18 @@ comets, and switch modes — changes show up for all players instantly.
 
 **Host a game**
 
-- From the title screen click **Host Co-op Game** — this starts a local server
-  and drops you straight in, or
-- run the server yourself: `python server.py --mode creative` (also
-  `explore` / `survival`).
+- From the title screen click **Host Co-op Game**, optionally set a **room
+  password**, and you're in — it starts a local server for you, or
+- run the server yourself: `python server.py --mode creative --password secret`
+  (mode also `explore` / `survival`; `--password` optional).
 
 **Join a game**
 
-- Click **Join Co-op Game** and type the host's address, e.g.
-  `ws://192.168.1.20:8765`.
+- Click **Join Co-op Game**, enter the host's address (e.g.
+  `ws://192.168.1.20:8765`) and the room password if there is one.
+
+A room password keeps your world private even if the address is reachable —
+recommended for any internet game.
 
 **Where the host's address comes from**
 

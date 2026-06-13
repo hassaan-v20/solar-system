@@ -21,7 +21,8 @@ from world import World
 
 
 class GameServer:
-    def __init__(self, mode):
+    def __init__(self, mode, password=""):
+        self.password = password
         self.world = World(mode)
         self.sim_time = 0.0
         self.speed = 1.0 if mode == "explore" else 0.10
@@ -30,12 +31,25 @@ class GameServer:
         self.next_pid = 1
 
     async def handler(self, ws, path=None):
+        # First message must authenticate.
+        try:
+            msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
+        except Exception:
+            return
+        if msg.get("t") != "auth" or (self.password and msg.get("password", "") != self.password):
+            try:
+                await ws.send(json.dumps({"t": "denied", "reason": "Wrong or missing password"}))
+            except Exception:
+                pass
+            return
+
         pid = self.next_pid
         self.next_pid += 1
-        self.clients[ws] = {"pid": pid, "name": f"Player{pid}", "pos": None, "cursor": None}
+        name = str(msg.get("name") or f"Player{pid}")[:16]
+        self.clients[ws] = {"pid": pid, "name": name, "pos": None, "cursor": None}
         await ws.send(json.dumps({"t": "welcome", "pid": pid, "mode": self.world.mode}))
-        self.world.notify(f"Player{pid} joined")
-        print(f"[server] Player{pid} connected ({len(self.clients)} online)")
+        self.world.notify(f"{name} joined")
+        print(f"[server] {name} connected ({len(self.clients)} online)")
         try:
             async for raw in ws:
                 try:
@@ -73,8 +87,6 @@ class GameServer:
                 self.world = World(msg.get("value", "creative"))
                 self.sim_time = 0.0
                 self.world.notify(f"{info.get('name')} switched to {self.world.mode}")
-        elif t == "name":
-            info["name"] = str(msg.get("name", info.get("name")))[:16]
         elif t == "cam":
             info["pos"] = msg.get("pos")
             info["cursor"] = msg.get("cursor")
@@ -110,9 +122,10 @@ class GameServer:
             await asyncio.sleep(1 / 60)
 
 
-async def run(mode, host, port):
-    server = GameServer(mode)
-    print(f"[server] Stellar co-op ({mode}) listening on {host}:{port}")
+async def run(mode, host, port, password):
+    server = GameServer(mode, password)
+    lock = "password-protected" if password else "open (no password)"
+    print(f"[server] Stellar co-op ({mode}, {lock}) listening on {host}:{port}")
     async with websockets.serve(server.handler, host, port):
         await server.ticker()
 
@@ -122,8 +135,9 @@ if __name__ == "__main__":
     ap.add_argument("--mode", default="creative", choices=["explore", "creative", "survival"])
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--password", default="")
     args = ap.parse_args()
     try:
-        asyncio.run(run(args.mode, args.host, args.port))
+        asyncio.run(run(args.mode, args.host, args.port, args.password))
     except KeyboardInterrupt:
         print("\n[server] shutting down")

@@ -110,6 +110,24 @@ def pick_comet(camera, world, pos):
     return best
 
 
+def pick_entity(camera, world, pos, t):
+    origin, d = camera.screen_ray(*pos)
+    best, best_t = None, 1e9
+    for e in world.entities:
+        if not e.alive:
+            continue
+        wp = world.entity_world_pos(e, t)
+        if wp is None:
+            continue
+        oc = np.array(wp, dtype="f8") - origin
+        tca = oc @ d
+        if tca < 0:
+            continue
+        if oc @ oc - tca * tca <= 0.6 * 0.6 and tca < best_t:
+            best, best_t = e.eid, tca
+    return best
+
+
 def main():
     pygame.init()
     fullscreen = True
@@ -134,6 +152,9 @@ def main():
     host_proc = None
     cam_timer = 0.0
     join_text = f"ws://localhost:{PORT}"
+    join_pw = ""
+    host_pw = ""
+    join_focus = 0          # 0 = address field, 1 = password field
     dragging = False
     moved = 0.0
     down_pos = last_pos = (0, 0)
@@ -178,14 +199,37 @@ def main():
             elif event.type == pygame.KEYDOWN:
                 if state == "join":
                     if event.key == pygame.K_RETURN:
-                        net = NetClient(normalize_addr(join_text), name="Player")
+                        net = NetClient(normalize_addr(join_text), name="Player", password=join_pw)
+                        world = World("creative"); state = "playing"
+                    elif event.key == pygame.K_ESCAPE:
+                        state = "title"
+                    elif event.key == pygame.K_TAB:
+                        join_focus ^= 1
+                    elif event.key == pygame.K_BACKSPACE:
+                        if join_focus == 0:
+                            join_text = join_text[:-1]
+                        else:
+                            join_pw = join_pw[:-1]
+                    elif event.unicode and event.unicode.isprintable():
+                        if join_focus == 0:
+                            join_text += event.unicode
+                        else:
+                            join_pw += event.unicode
+                    continue
+                if state == "host_setup":
+                    if event.key == pygame.K_RETURN:
+                        args = [sys.executable, str(SERVER_PY), "--mode", "creative", "--port", str(PORT)]
+                        if host_pw:
+                            args += ["--password", host_pw]
+                        host_proc = subprocess.Popen(args)
+                        net = NetClient(f"ws://127.0.0.1:{PORT}", name="Host", password=host_pw)
                         world = World("creative"); state = "playing"
                     elif event.key == pygame.K_ESCAPE:
                         state = "title"
                     elif event.key == pygame.K_BACKSPACE:
-                        join_text = join_text[:-1]
+                        host_pw = host_pw[:-1]
                     elif event.unicode and event.unicode.isprintable():
-                        join_text += event.unicode
+                        host_pw += event.unicode
                     continue
 
                 if event.key == pygame.K_F11:
@@ -254,10 +298,7 @@ def main():
                                         world, sim_time = load_game()
                                         speed = MODE_SPEED.get(world.mode, 0.1); running = True; state = "playing"
                                     elif action == "host":
-                                        host_proc = subprocess.Popen(
-                                            [sys.executable, str(SERVER_PY), "--mode", "creative", "--port", str(PORT)])
-                                        net = NetClient(f"ws://127.0.0.1:{PORT}", name="Host")
-                                        world = World("creative"); state = "playing"
+                                        state = "host_setup"
                                     elif action == "join":
                                         state = "join"
                                     else:
@@ -302,7 +343,10 @@ def main():
                      net, players, avatar_labels)
         elif state == "join":
             renderer.render(World("explore"), camera, title_time, None)
-            draw_join(hud, W, H, join_text)
+            draw_join(hud, W, H, join_text, join_pw, join_focus)
+        elif state == "host_setup":
+            renderer.render(World("explore"), camera, title_time, None)
+            draw_host(hud, W, H, host_pw)
         else:
             renderer.render(world, camera, title_time, None)
             draw_title(hud, W, H, has_save(), mouse)
@@ -325,6 +369,12 @@ def handle_play_click(camera, world, pos, selected, sim_time, W, H, net):
         for rect, kind in hotbar_rects(W, H):
             if point_in(rect, pos):
                 return kind
+    # Entities (life / crystals / relics) are clickable to harvest.
+    eid = pick_entity(camera, world, pos, sim_time)
+    if eid is not None:
+        cmd = {"type": "harvest", "eid": eid}
+        net.send_cmd(cmd) if net is not None else world.apply(cmd)
+        return selected
     if world.threats_enabled:
         cid = pick_comet(camera, world, pos)
         if cid is not None:
@@ -373,19 +423,42 @@ def draw_title(hud, W, H, save_exists, mouse):
     hud.end()
 
 
-def draw_join(hud, W, H, text):
+def _field(hud, x, y, bw, bh, label, value, focused, mask=False):
+    border = (0.5, 0.8, 1.0, 1.0) if focused else (0.35, 0.42, 0.6, 0.6)
+    hud.text(x, y - 22, label, 15, (170, 185, 210), "ui")
+    hud.border_panel(x, y, bw, bh, (0.05, 0.07, 0.12, 0.95), border, 2)
+    shown = ("•" * len(value)) if mask else value
+    if focused:
+        shown += "_"
+    hud.text(x + 14, y + 13, shown, 20, (235, 240, 250), "body")
+
+
+def draw_join(hud, W, H, text, pw, focus):
     hud.begin()
-    hud.panel(0, 0, W, H, (0.0, 0.0, 0.0, 0.55))
-    hud.text_center(W // 2, H // 2 - 120, "JOIN CO-OP GAME", 34, (255, 235, 175), "title")
-    hud.text_center(W // 2, H // 2 - 64, "Enter the host's address", 18, (180, 200, 235), "ui")
-    bw, bh = 560, 52
-    x, y = (W - bw) // 2, H // 2 - 16
-    hud.border_panel(x, y, bw, bh, (0.05, 0.07, 0.12, 0.95), (0.5, 0.65, 1.0, 0.9), 2)
-    hud.text(x + 14, y + 15, text + "_", 22, (235, 240, 250), "body")
-    hud.text_center(W // 2, H // 2 + 64,
-                    "Enter = connect      Esc = back", 17, (170, 180, 200), "body")
-    hud.text_center(W // 2, H // 2 + 110,
+    hud.panel(0, 0, W, H, (0.0, 0.0, 0.0, 0.6))
+    hud.text_center(W // 2, H // 2 - 160, "JOIN CO-OP GAME", 34, (255, 235, 175), "title")
+    bw, bh = 560, 48
+    x = (W - bw) // 2
+    _field(hud, x, H // 2 - 80, bw, bh, "HOST ADDRESS", text, focus == 0)
+    _field(hud, x, H // 2 + 6, bw, bh, "PASSWORD (blank if none)", pw, focus == 1, mask=True)
+    hud.text_center(W // 2, H // 2 + 86, "Tab = switch field    Enter = connect    Esc = back",
+                    16, (170, 180, 200), "body")
+    hud.text_center(W // 2, H // 2 + 120,
                     "e.g.  ws://12.34.56.78:8765   (host shares this — see README)",
+                    15, (140, 150, 170), "body")
+    hud.end()
+
+
+def draw_host(hud, W, H, pw):
+    hud.begin()
+    hud.panel(0, 0, W, H, (0.0, 0.0, 0.0, 0.6))
+    hud.text_center(W // 2, H // 2 - 150, "HOST CO-OP GAME", 34, (255, 235, 175), "title")
+    bw, bh = 560, 48
+    x = (W - bw) // 2
+    _field(hud, x, H // 2 - 40, bw, bh, "ROOM PASSWORD (blank = open to anyone)", pw, True, mask=True)
+    hud.text_center(W // 2, H // 2 + 44, "Enter = start hosting    Esc = back", 16, (170, 180, 200), "body")
+    hud.text_center(W // 2, H // 2 + 80,
+                    "Share your address + password with friends (see README for internet play).",
                     15, (140, 150, 170), "body")
     hud.end()
 

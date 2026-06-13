@@ -21,6 +21,14 @@ START_ENERGY    = 150.0
 SUN_BASE_RATE   = 2.0      # energy/sec the star always provides
 PLANET_YIELD    = 6.0      # peak energy/sec from one ideally-placed planet
 
+ENTITY_MAX_PER_PLANET = 2
+ENTITY_SPAWN_GAP = 5.0
+ENTITY_REGROW    = 14.0
+ENTITY_ORBIT_RATE = 0.8
+ENTITY_REWARD = {"life": 35.0, "crystal": 25.0, "relic": 120.0}
+ENTITY_COLOR  = {"life": (0.40, 1.00, 0.50), "crystal": (0.45, 0.90, 1.00),
+                 "relic": (1.00, 0.85, 0.30)}
+
 COMET_SPEED      = 9.0     # world units / sec
 COMET_START_DIST = 105.0
 COMET_HIT_PAD    = 0.7     # extra radius around a planet that counts as a hit
@@ -109,6 +117,17 @@ class Comet:
     alive: bool = True
 
 
+@dataclass
+class Entity:
+    eid: int
+    body: int                 # index of the planet it lives on
+    kind: str                 # 'life' | 'crystal' | 'relic'
+    phase: float
+    radius: float             # orbit radius around its planet
+    alive: bool = True
+    regrow: float = 0.0
+
+
 # ── preset: the real solar system (Explore mode) ──────────────────────────────
 # (name, texture, radius, dist, period_yrs, tilt, special)
 _REAL = [
@@ -129,10 +148,13 @@ class World:
         self.mode = mode
         self.bodies = []
         self.comets = []
+        self.entities = []
         self.energy = float("inf")
         self.score = 0
         self._next_cid = 0
+        self._next_eid = 0
         self._comet_timer = COMET_BASE_GAP
+        self._entity_timer = ENTITY_SPAWN_GAP
         self._elapsed = 0.0
         self.message = ""
         self.message_t = 0.0
@@ -160,6 +182,18 @@ class World:
         return [b for b in self.bodies
                 if b.alive and b.special not in ("sun", "star")]
 
+    def entity_world_pos(self, e, t):
+        if not (0 <= e.body < len(self.bodies)):
+            return None
+        b = self.bodies[e.body]
+        if not b.alive:
+            return None
+        bx, by, bz = body_world_pos(b, t)
+        a = e.phase + t * ENTITY_ORBIT_RATE
+        return (bx + e.radius * math.cos(a),
+                by + 0.15 * math.sin(a * 1.7),
+                bz + e.radius * math.sin(a))
+
     # ── command interface (what the co-op server replays) ───────────────────────
     def apply(self, cmd):
         kind = cmd.get("type")
@@ -168,6 +202,8 @@ class World:
                                    cmd.get("owner", ""))
         if kind == "deflect":
             return self.deflect(cmd["cid"])
+        if kind == "harvest":
+            return self.harvest(cmd["eid"])
         return None
 
     def place_body(self, kind, x, z, t, owner=""):
@@ -218,6 +254,39 @@ class World:
                 return True
         return False
 
+    def harvest(self, eid):
+        for e in self.entities:
+            if e.eid == eid and e.alive:
+                e.alive = False
+                e.regrow = ENTITY_REGROW
+                if not self.infinite_energy:
+                    self.energy = min(self.energy + ENTITY_REWARD.get(e.kind, 20.0), 99999.0)
+                self.score += 1
+                self.notify(f"Harvested {e.kind}  (+{int(ENTITY_REWARD.get(e.kind, 20))})")
+                return True
+        return False
+
+    def _spawn_entity(self):
+        eligible = [i for i, b in enumerate(self.bodies)
+                    if b.alive and b.special not in ("sun", "star")]
+        random.shuffle(eligible)
+        for i in eligible:
+            here = [e for e in self.entities if e.body == i and e.alive]
+            if len(here) >= ENTITY_MAX_PER_PLANET:
+                continue
+            b = self.bodies[i]
+            if random.random() < 0.08:
+                kind = "relic"
+            elif b.special == "earth":
+                kind = "life"
+            else:
+                kind = random.choice(["crystal", "life"])
+            self.entities.append(Entity(self._next_eid, i, kind,
+                                        random.uniform(0, 2 * math.pi),
+                                        b.radius + 0.7))
+            self._next_eid += 1
+            return
+
     # ── simulation tick (real dt; gated by `running` so pause freezes it) ───────
     def tick(self, dt, t, running):
         if not running or self.mode == "explore":
@@ -231,8 +300,25 @@ class World:
             self._spawn_comets(dt, t)
             self._move_comets(dt, t)
 
+        if self.mode in ("creative", "survival"):
+            self._tick_entities(dt)
+
         if self.message_t > 0.0:
             self.message_t -= dt
+
+    def _tick_entities(self, dt):
+        # Drop entities whose planet was destroyed.
+        self.entities = [e for e in self.entities
+                         if 0 <= e.body < len(self.bodies) and self.bodies[e.body].alive]
+        for e in self.entities:
+            if not e.alive:
+                e.regrow -= dt
+                if e.regrow <= 0.0:
+                    e.alive = True
+        self._entity_timer -= dt
+        if self._entity_timer <= 0.0:
+            self._entity_timer = ENTITY_SPAWN_GAP
+            self._spawn_entity()
 
     def energy_rate(self):
         rate = SUN_BASE_RATE
@@ -315,11 +401,14 @@ class World:
             "elapsed": self._elapsed,
             "comet_timer": self._comet_timer,
             "next_cid": self._next_cid,
+            "next_eid": self._next_eid,
+            "entity_timer": self._entity_timer,
             "sim_time": sim_time,
             "message": self.message,
             "message_t": self.message_t,
             "bodies": [asdict(b) for b in self.bodies],
             "comets": [asdict(c) for c in self.comets],
+            "entities": [asdict(e) for e in self.entities],
         }
 
     @classmethod
@@ -327,11 +416,14 @@ class World:
         w = cls(d["mode"])
         w.bodies = [Body(**b) for b in d["bodies"]]
         w.comets = [Comet(**c) for c in d["comets"]]
+        w.entities = [Entity(**e) for e in d.get("entities", [])]
         w.energy = float("inf") if d.get("energy") is None else d["energy"]
         w.score = d.get("score", 0)
         w._elapsed = d.get("elapsed", 0.0)
         w._comet_timer = d.get("comet_timer", COMET_BASE_GAP)
         w._next_cid = d.get("next_cid", 0)
+        w._next_eid = d.get("next_eid", 0)
+        w._entity_timer = d.get("entity_timer", ENTITY_SPAWN_GAP)
         w.message = d.get("message", "")
         w.message_t = d.get("message_t", 0.0)
         return w, d.get("sim_time", 0.0)

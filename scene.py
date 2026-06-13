@@ -11,7 +11,7 @@ from mesh import (
     create_ring,
     create_sphere,
 )
-from world import ORBIT_SPEED, body_world_pos
+from world import ORBIT_SPEED, ENTITY_COLOR, body_world_pos
 
 SHADER_DIR = Path(__file__).parent / "shaders"
 TEX_DIR = Path(__file__).parent / "textures"
@@ -273,6 +273,20 @@ class SolarSystem:
             p["model"].write(self._body_model(pos, 0.32, 0.0, time, 0.05))
             p["tint"].value = (1.0, 0.85, 0.7)
             p["emit"].value = 2.2
+            p["is_earth"].value = 0
+            self._get_tex("2k_moon.jpg").use(0)
+            self.sphere_planet.render()
+
+        # Interactive entities (life / crystals / relics) orbiting their planets.
+        for e in world.entities:
+            if not e.alive:
+                continue
+            epos = world.entity_world_pos(e, time)
+            if epos is None:
+                continue
+            p["model"].write(self._body_model(np.array(epos, dtype="f4"), 0.22, 0.0, time, 0.08))
+            p["tint"].value = ENTITY_COLOR.get(e.kind, (1.0, 1.0, 1.0))
+            p["emit"].value = 1.5
             p["is_earth"].value = 0
             self._get_tex("2k_moon.jpg").use(0)
             self.sphere_planet.render()

@@ -16,12 +16,15 @@ import websockets
 
 from world import World
 
+_EMPTY = object()
+
 
 class NetClient:
-    def __init__(self, url, name="Player"):
+    def __init__(self, url, name="Player", password=""):
         self.url = url
         self.name = name
-        self.status = "connecting"   # connecting | connected | error | closed
+        self.password = password
+        self.status = "connecting"   # connecting | connected | denied | error | closed
         self.error = ""
         self.pid = None
         self.players = []
@@ -64,14 +67,18 @@ class NetClient:
             return
 
         self._ws = ws
-        self.status = "connected"
         try:
-            await ws.send(json.dumps({"t": "name", "name": self.name}))
+            await ws.send(json.dumps({"t": "auth", "name": self.name, "password": self.password}))
             sender = asyncio.create_task(self._sender(ws))
             async for raw in ws:
                 msg = json.loads(raw)
-                if msg.get("t") == "welcome":
+                if msg.get("t") == "denied":
+                    self.status = "denied"
+                    self.error = msg.get("reason", "denied")
+                    break
+                elif msg.get("t") == "welcome":
                     self.pid = msg.get("pid")
+                    self.status = "connected"
                 elif msg.get("t") == "state":
                     with self._lock:
                         self._snapshot = msg
@@ -81,12 +88,21 @@ class NetClient:
         except websockets.ConnectionClosed:
             pass
         finally:
-            self.status = "closed"
+            if self.status not in ("denied", "error"):
+                self.status = "closed"
+
+    def _get_msg(self):
+        try:
+            return self._sendq.get(timeout=0.2)
+        except queue.Empty:
+            return _EMPTY
 
     async def _sender(self, ws):
         loop = asyncio.get_event_loop()
-        while True:
-            msg = await loop.run_in_executor(None, self._sendq.get)
+        while not self._stop:
+            msg = await loop.run_in_executor(None, self._get_msg)
+            if msg is _EMPTY:
+                continue            # keeps the worker thread joinable at exit
             if msg is None:
                 return
             await ws.send(json.dumps(msg))
