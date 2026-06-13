@@ -7,8 +7,17 @@ extends Node3D
 const ASTEROID_COUNT := 140
 const STAR_COUNT := 700
 
+# Physics collision layers (1-based bit values). Friend/foe for weapons is decided
+# entirely by these masks, so projectiles need no owner tracking (see projectile.gd).
+const LAYER_ENVIRONMENT := 1   # asteroids / debris
+const LAYER_PLAYER_SHIP := 2
+const LAYER_ENEMY := 4
+
+const DRONE_COUNT := 3
+
 var _rng := RandomNumberGenerator.new()
 var _want_capture := true
+var _ship: ShipController
 
 func _ready() -> void:
 	_rng.randomize()
@@ -20,10 +29,12 @@ func _ready() -> void:
 	_set_capture(true)
 	_build_environment()
 	_build_stars()
-	var ship := _build_ship()
-	_build_camera(ship)
-	_build_hud(ship)
+	_ship = _build_ship()
+	_build_camera(_ship)
+	_build_hud(_ship)
 	_build_asteroids()
+	_build_enemies(_ship)
+	EventBus.ship_destroyed.connect(_on_ship_destroyed)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("toggle_mouse"):
@@ -82,6 +93,13 @@ func _setup_input() -> void:
 			var ev := InputEventKey.new()
 			ev.physical_keycode = key
 			InputMap.action_add_event(action, ev)
+
+	# Primary fire on the left mouse button (works while the mouse is captured).
+	if not InputMap.has_action("fire_primary"):
+		InputMap.add_action("fire_primary")
+	var fire_ev := InputEventMouseButton.new()
+	fire_ev.button_index = MOUSE_BUTTON_LEFT
+	InputMap.action_add_event("fire_primary", fire_ev)
 
 # ── world ─────────────────────────────────────────────────────────────────────
 func _build_environment() -> void:
@@ -156,12 +174,24 @@ func _build_ship() -> ShipController:
 	nose.material_override = nose_mat
 	ship.add_child(nose)
 
-	# Collision (unused in M1 but keeps the body ready for M2 hit detection).
+	# Player-ship body: collides with the environment (asteroids); enemy bolts
+	# detect it via this layer.
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
 	shape.size = Vector3(2.2, 0.7, 3.4)
 	col.shape = shape
 	ship.add_child(col)
+	ship.collision_layer = LAYER_PLAYER_SHIP
+	ship.collision_mask = LAYER_ENVIRONMENT
+
+	# Primary weapon mounted at the nose; its bolts damage the enemy layer.
+	var wc := WeaponController.new()
+	wc.weapon_def = load("res://data/weapons/laser_cannon_mk1.tres")
+	wc.target_mask = LAYER_ENEMY
+	wc.muzzle_offset = Vector3(0, 0, -2.4)
+	wc.bolt_color = Color(0.4, 0.9, 1.0)
+	ship.add_child(wc)
+	ship.weapon = wc
 
 	add_child(ship)
 	return ship
@@ -186,6 +216,7 @@ func _build_asteroids() -> void:
 		# — no more flying straight through asteroids. (M2 will split these onto a
 		# dedicated "environment" layer once weapons/enemies need their own.)
 		var body := StaticBody3D.new()
+		body.collision_layer = LAYER_ENVIRONMENT
 		# Place in a shell around origin so the spawn point stays clear.
 		body.position = _random_unit() * _rng.randf_range(40.0, 260.0)
 		body.rotation = Vector3(_rng.randf() * TAU, _rng.randf() * TAU, _rng.randf() * TAU)
@@ -218,6 +249,25 @@ func _build_asteroids() -> void:
 		body.add_child(col)
 
 		add_child(body)
+
+func _build_enemies(ship: ShipController) -> void:
+	var def := load("res://data/enemies/light_drone.tres")
+	for i in DRONE_COUNT:
+		var drone := EnemyDrone.new()
+		if def is EnemyDef:
+			drone.enemy_def = def
+		drone.target = ship
+		# Spread the drones out in front of / around the spawn point.
+		drone.position = _random_unit() * _rng.randf_range(55.0, 95.0)
+		add_child(drone)
+
+func _on_ship_destroyed() -> void:
+	if _ship == null:
+		return
+	Explosion.spawn(self, _ship.global_position, 3.5, Color(1.0, 0.55, 0.2))
+	_ship.set_physics_process(false)
+	if _ship.weapon != null:
+		_ship.weapon.set_physics_process(false)
 
 func _random_unit() -> Vector3:
 	var v := Vector3(_rng.randfn(), _rng.randfn(), _rng.randfn())

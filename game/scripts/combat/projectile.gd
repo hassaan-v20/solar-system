@@ -1,0 +1,55 @@
+class_name Projectile
+extends Area3D
+## Simulation: a fired energy bolt. Travels straight along its own -Z, damages the
+## first body whose layer is in its target mask, then despawns. Whoever fires it
+## calls setup() — friend/foe is enforced purely by collision masks (see main.gd
+## layer constants), so there is no owner tracking and no friendly fire.
+
+var damage: float = 10.0
+var speed: float = 160.0
+var lifetime: float = 4.0
+var _color: Color = Color(0.4, 0.9, 1.0)
+var _life: float = 0.0
+
+func setup(p_damage: float, p_speed: float, p_target_mask: int, p_color: Color) -> void:
+	damage = p_damage
+	speed = p_speed
+	collision_layer = 0          # nothing needs to detect the bolt itself
+	collision_mask = p_target_mask
+	_color = p_color
+
+func _ready() -> void:
+	var mesh_inst := MeshInstance3D.new()
+	var capsule := CapsuleMesh.new()
+	capsule.radius = 0.12
+	capsule.height = 1.8
+	mesh_inst.mesh = capsule
+	mesh_inst.rotation_degrees = Vector3(90, 0, 0)  # lay the capsule along Z (the travel axis)
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = _color
+	mat.emission_enabled = true
+	mat.emission = _color
+	mat.emission_energy_multiplier = 4.0
+	mesh_inst.material_override = mat
+	add_child(mesh_inst)
+
+	var col := CollisionShape3D.new()
+	var shape := SphereShape3D.new()
+	shape.radius = 0.4
+	col.shape = shape
+	add_child(col)
+
+	body_entered.connect(_on_body_entered)
+
+func _physics_process(delta: float) -> void:
+	global_position += -global_transform.basis.z * speed * delta
+	_life += delta
+	if _life >= lifetime:
+		queue_free()
+
+func _on_body_entered(body: Node) -> void:
+	if body.has_method("apply_damage"):
+		body.apply_damage(damage)
+	Explosion.spawn(get_tree().current_scene, global_position, 0.6, _color)
+	queue_free()

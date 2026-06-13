@@ -9,6 +9,8 @@ extends CharacterBody3D
 var current_hull: float = 0.0
 var current_shield: float = 0.0
 var is_boosting: bool = false
+var alive: bool = true
+var weapon: WeaponController   # set by main when the ship is assembled
 
 var _mouse_delta: Vector2 = Vector2.ZERO
 
@@ -25,6 +27,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		_mouse_delta += (event as InputEventMouseMotion).relative
 
 func _physics_process(delta: float) -> void:
+	if not alive:
+		# Coast to a stop after destruction; controls are dead.
+		velocity = velocity.lerp(Vector3.ZERO, clampf(ship_def.brake_damp * delta, 0.0, 1.0))
+		move_and_slide()
+		return
 	_steer(delta)
 	_translate(delta)
 
@@ -61,3 +68,18 @@ func _translate(delta: float) -> void:
 
 func get_speed() -> float:
 	return velocity.length()
+
+## Damage flows shield-first, then hull (GDD §13). Emits via EventBus so the HUD,
+## audio, and (later) ship-AI voice react without referencing this node.
+func apply_damage(amount: float) -> void:
+	if amount <= 0.0 or not alive:
+		return
+	var to_shield := minf(current_shield, amount)
+	current_shield -= to_shield
+	current_hull = maxf(0.0, current_hull - (amount - to_shield))
+	EventBus.ship_shield_changed.emit(current_shield, ship_def.shield_max)
+	EventBus.ship_hull_changed.emit(current_hull, ship_def.hull_max)
+	EventBus.ship_hit.emit(amount)
+	if current_hull <= 0.0:
+		alive = false
+		EventBus.ship_destroyed.emit()

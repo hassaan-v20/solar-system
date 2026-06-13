@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="EnemyDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/enemy_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+enemy_id = "light_drone"
+display_name = "Light Drone"
+hull_max = 60.0
+move_speed = 26.0
+turn_speed = 2.6
+preferred_range = 42.0
+weapon_damage = 9.0
+fire_rate = 1.0
+projectile_speed = 120.0
+score_value = 100

@@ -10,3 +10,4 @@ extends Resource
 @export var max_heat: float = 100.0
 @export var cooldown_rate: float = 25.0   # heat dissipated per second
 @export var weapon_range: float = 800.0
+@export var projectile_speed: float = 200.0

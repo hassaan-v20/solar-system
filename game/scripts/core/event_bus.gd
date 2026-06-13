@@ -7,7 +7,9 @@ extends Node
 signal ship_hull_changed(current: float, maximum: float)
 signal ship_shield_changed(current: float, maximum: float)
 signal ship_system_damaged(system: String)
+signal ship_hit(amount: float)
 signal ship_destroyed
+signal enemy_destroyed
 
 # Mission (used from Milestone 3 onward)
 signal mission_state_changed(state: String)
