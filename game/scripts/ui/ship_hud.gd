@@ -25,7 +25,7 @@ func _ready() -> void:
 	_boost_label = _make_label(panel)
 
 	var hint := Label.new()
-	hint.text = "W/S thrust   mouse steer   A/D roll   Q/E strafe   Shift boost   Ctrl brake   Esc free mouse   F8 quit"
+	hint.text = "W/S thrust   mouse steer   A/D roll   Q/E strafe   Shift boost   Ctrl brake   Esc free mouse   F11 fullscreen   F8 quit"
 	hint.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.modulate = Color(1, 1, 1, 0.5)

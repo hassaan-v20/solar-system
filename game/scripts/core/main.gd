@@ -8,11 +8,16 @@ const ASTEROID_COUNT := 140
 const STAR_COUNT := 700
 
 var _rng := RandomNumberGenerator.new()
+var _want_capture := true
 
 func _ready() -> void:
 	_rng.randomize()
 	_setup_input()
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	# Use Godot's own fullscreen (a borderless window), NOT macOS native
+	# fullscreen (the green button) — native fullscreen opens a separate macOS
+	# Space where mouse capture / relative steering breaks.
+	_apply_fullscreen(true)
+	_set_capture(true)
 	_build_environment()
 	_build_stars()
 	var ship := _build_ship()
@@ -22,9 +27,37 @@ func _ready() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("toggle_mouse"):
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED else Input.MOUSE_MODE_CAPTURED
+		_set_capture(not _want_capture)
+	elif event.is_action_pressed("toggle_fullscreen"):
+		var is_fs := DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
+		_apply_fullscreen(not is_fs)
+		_set_capture(true)
 	elif event.is_action_pressed("quit_game"):
 		get_tree().quit()
+
+func _process(_delta: float) -> void:
+	# macOS silently drops mouse capture when the window crosses displays or
+	# Spaces (the cursor reappears and steering dies). Re-assert capture every
+	# frame while focused and wanted, so it's grabbed back immediately.
+	if _want_capture and get_window().has_focus() and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+func _notification(what: int) -> void:
+	# Immediate re-grab on focus/enter events (Cmd-Tab, mouse re-entering), but
+	# only if the player hasn't deliberately freed the mouse with Esc.
+	if not _want_capture:
+		return
+	match what:
+		NOTIFICATION_APPLICATION_FOCUS_IN, NOTIFICATION_WM_WINDOW_FOCUS_IN, NOTIFICATION_WM_MOUSE_ENTER:
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+func _set_capture(on: bool) -> void:
+	_want_capture = on
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if on else Input.MOUSE_MODE_VISIBLE
+
+func _apply_fullscreen(on: bool) -> void:
+	DisplayServer.window_set_mode(
+		DisplayServer.WINDOW_MODE_FULLSCREEN if on else DisplayServer.WINDOW_MODE_WINDOWED)
 
 # ── input ─────────────────────────────────────────────────────────────────────
 func _setup_input() -> void:
@@ -39,6 +72,7 @@ func _setup_input() -> void:
 		"boost": [KEY_SHIFT],
 		"brake": [KEY_CTRL],
 		"toggle_mouse": [KEY_ESCAPE],
+		"toggle_fullscreen": [KEY_F11],
 		"quit_game": [KEY_F8],
 	}
 	for action in binds:
@@ -145,24 +179,45 @@ func _build_hud(ship: ShipController) -> void:
 
 func _build_asteroids() -> void:
 	for i in ASTEROID_COUNT:
-		var a := MeshInstance3D.new()
-		var m := SphereMesh.new()
 		var r := _rng.randf_range(1.5, 6.0)
+
+		# Solid rock: a StaticBody3D on the default collision layer. The ship is a
+		# CharacterBody3D (also default mask), so move_and_slide stops it on impact
+		# — no more flying straight through asteroids. (M2 will split these onto a
+		# dedicated "environment" layer once weapons/enemies need their own.)
+		var body := StaticBody3D.new()
+		# Place in a shell around origin so the spawn point stays clear.
+		body.position = _random_unit() * _rng.randf_range(40.0, 260.0)
+		body.rotation = Vector3(_rng.randf() * TAU, _rng.randf() * TAU, _rng.randf() * TAU)
+
+		var mesh_inst := MeshInstance3D.new()
+		var m := SphereMesh.new()
 		m.radius = r
 		m.height = r * 2.0
 		m.radial_segments = 6
 		m.rings = 4
-		a.mesh = m
+		mesh_inst.mesh = m
 		var mat := StandardMaterial3D.new()
 		var g := _rng.randf_range(0.25, 0.45)
 		mat.albedo_color = Color(g, g * 0.95, g * 0.9)
 		mat.roughness = 1.0
-		a.material_override = mat
-		# Place in a shell around origin so the spawn point stays clear.
-		a.position = _random_unit() * _rng.randf_range(40.0, 260.0)
-		a.scale = Vector3(_rng.randf_range(0.7, 1.4), _rng.randf_range(0.7, 1.4), _rng.randf_range(0.7, 1.4))
-		a.rotation = Vector3(_rng.randf() * TAU, _rng.randf() * TAU, _rng.randf() * TAU)
-		add_child(a)
+		mesh_inst.material_override = mat
+		# Per-axis scale only lumps up the *look*; the collision sphere below stays
+		# round (a fair approximation for placeholder rocks, and keeps the physics
+		# shape free of the non-uniform-scale warnings Godot raises otherwise).
+		var sx := _rng.randf_range(0.7, 1.4)
+		var sy := _rng.randf_range(0.7, 1.4)
+		var sz := _rng.randf_range(0.7, 1.4)
+		mesh_inst.scale = Vector3(sx, sy, sz)
+		body.add_child(mesh_inst)
+
+		var col := CollisionShape3D.new()
+		var shape := SphereShape3D.new()
+		shape.radius = r * (sx + sy + sz) / 3.0
+		col.shape = shape
+		body.add_child(col)
+
+		add_child(body)
 
 func _random_unit() -> Vector3:
 	var v := Vector3(_rng.randfn(), _rng.randfn(), _rng.randfn())
