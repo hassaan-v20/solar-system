@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="ShipDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/ship_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+ship_id = "wayfarer"
+display_name = "Wayfarer"
+hull_max = 1000.0
+shield_max = 500.0
+cargo_slots = 6
+max_speed = 42.0
+boost_speed = 70.0
+weapon_slots = 2
+utility_slots = 1
+repair_kits = 3
+acceleration = 30.0
+strafe_accel = 22.0
+linear_damp = 0.8
+brake_damp = 3.0
+turn_speed = 2.2
+roll_speed = 2.0
+boost_accel_mult = 1.8

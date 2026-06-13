@@ -1,0 +1,24 @@
+; Engine configuration file.
+; Stellar — Ghost Station vertical slice. See ../docs/ARCHITECTURE.md.
+
+config_version=5
+
+[application]
+
+config/name="Stellar"
+config/description="Co-op space raid extraction — Ghost Station vertical slice."
+run/main_scene="res://scenes/raid/ghost_station_raid.tscn"
+config/features=PackedStringArray("4.6", "Forward Plus")
+
+[autoload]
+
+EventBus="*res://scripts/core/event_bus.gd"
+
+[display]
+
+window/size/viewport_width=1600
+window/size/viewport_height=900
+
+[rendering]
+
+environment/defaults/default_clear_color=Color(0.015, 0.02, 0.04, 1)
