@@ -13,13 +13,26 @@ var _hint_label: Label
 var _upgrade_rows: Array = []   # [{id, cost, button}]
 var _current_device := MenuNav.DEVICE_NONE
 
+# Co-op (M5 Phase 1c)
+var _coop_status: Label
+var _host_button: Button
+var _join_button: Button
+var _coop_launch_button: Button
+var _ip_edit: LineEdit
+var _coop_ips_label: Label
+
 func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	MenuNav.enable_gamepad_ui()
 	_build_ui()
 	EventBus.profile_changed.connect(_refresh)
+	Net.hosted.connect(_refresh_coop)
+	Net.joined.connect(_refresh_coop)
+	Net.join_failed.connect(_on_join_failed)
+	Net.peers_changed.connect(_refresh_coop)
 	_refresh()
+	_refresh_coop()
 	# Give the gamepad/keyboard a focused starting point, and show the matching guide.
 	_launch_button.grab_focus.call_deferred()
 	_current_device = MenuNav.DEVICE_GAMEPAD if MenuNav.gamepad_connected() else MenuNav.DEVICE_KBM
@@ -63,9 +76,41 @@ func _build_ui() -> void:
 	board.text = "MISSION BOARD"
 	root.add_child(board)
 	_launch_button = Button.new()
-	_launch_button.text = "▶  Launch: Ghost Station"
+	_launch_button.text = "▶  Launch: Ghost Station (solo)"
 	_launch_button.pressed.connect(_on_launch)
 	root.add_child(_launch_button)
+
+	root.add_child(HSeparator.new())
+	var coop_title := Label.new()
+	coop_title.text = "CO-OP  (separate ships, vs. drones together)"
+	root.add_child(coop_title)
+	_coop_status = Label.new()
+	_coop_status.modulate = Color(0.7, 0.85, 1.0)
+	root.add_child(_coop_status)
+	var coop_row := HBoxContainer.new()
+	coop_row.add_theme_constant_override("separation", 10)
+	_host_button = Button.new()
+	_host_button.text = "Host"
+	_host_button.pressed.connect(_on_host)
+	coop_row.add_child(_host_button)
+	_ip_edit = LineEdit.new()
+	_ip_edit.text = "127.0.0.1"
+	_ip_edit.custom_minimum_size = Vector2(190, 0)
+	coop_row.add_child(_ip_edit)
+	_join_button = Button.new()
+	_join_button.text = "Join"
+	_join_button.pressed.connect(_on_join)
+	coop_row.add_child(_join_button)
+	root.add_child(coop_row)
+	_coop_launch_button = Button.new()
+	_coop_launch_button.text = "▶  Launch Co-op raid"
+	_coop_launch_button.pressed.connect(_on_launch_coop)
+	_coop_launch_button.visible = false
+	root.add_child(_coop_launch_button)
+	_coop_ips_label = Label.new()
+	_coop_ips_label.modulate = Color(1, 1, 1, 0.5)
+	_coop_ips_label.visible = false
+	root.add_child(_coop_ips_label)
 
 	root.add_child(HSeparator.new())
 	var shop := Label.new()
@@ -128,3 +173,54 @@ func _on_buy(id: String, cost: int) -> void:
 
 func _on_repair() -> void:
 	PlayerProfile.repair(RewardCalculator.repair_cost(PlayerProfile.ship_hull_pct))
+
+# ── co-op lobby (M5 Phase 1c) ─────────────────────────────────────────────────
+func _on_host() -> void:
+	if Net.host_game():
+		_refresh_coop()
+
+func _on_join() -> void:
+	var ip := _ip_edit.text.strip_edges()
+	if ip == "":
+		ip = "127.0.0.1"
+	if Net.join_game(ip):
+		_coop_status.text = "Connecting to %s…" % ip
+
+func _on_launch_coop() -> void:
+	Net.start_coop_raid()   # sends every connected peer into the seeded raid
+
+func _on_join_failed() -> void:
+	_coop_status.text = "Connection failed — check the IP and that the host is up."
+	_refresh_coop()
+
+func _refresh_coop() -> void:
+	if not Net.active:
+		_coop_status.text = "Offline. Host a game, or enter an IP and Join."
+		_host_button.disabled = false
+		_join_button.disabled = false
+		_ip_edit.editable = true
+		_coop_launch_button.visible = false
+		_coop_ips_label.visible = false
+		_launch_button.disabled = false      # solo launch available when offline
+		return
+	_host_button.disabled = true
+	_join_button.disabled = true
+	_ip_edit.editable = false
+	_launch_button.disabled = true           # in co-op, use the co-op launch
+	if Net.is_host():
+		_coop_status.text = "Hosting on :%d — %d player(s). Launch when everyone's in." % [Net.DEFAULT_PORT, Net.player_count()]
+		_coop_launch_button.visible = true
+		_coop_ips_label.visible = true
+		_coop_ips_label.text = "Your address (share it): %s" % _local_ips_text()
+	else:
+		_coop_status.text = "Connected as peer %d — waiting for the host to launch…" % multiplayer.get_unique_id()
+		_coop_launch_button.visible = false
+		_coop_ips_label.visible = false
+
+func _local_ips_text() -> String:
+	var out := ""
+	for a in IP.get_local_addresses():
+		# Keep IPv4, drop loopback and link-local noise (Tailscale shows as 100.x).
+		if a.count(".") == 3 and not a.begins_with("127.") and not a.begins_with("169.254"):
+			out += ("" if out.is_empty() else ", ") + a
+	return out if not out.is_empty() else "(no IPv4 found)"
