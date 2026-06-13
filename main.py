@@ -115,17 +115,18 @@ def pick_comet(camera, world, pos):
 
 
 def pick_body(camera, world, pos, t):
-    origin, d = camera.screen_ray(*pos)
-    best, best_t = None, 1e9
+    """Land on the landable planet whose on-screen position is nearest the click
+    (forgiving — you don't have to hit the tiny sphere exactly)."""
+    best, best_d = None, 140.0     # pixel threshold
     for b in world.bodies:
         if not b.alive or b.special in ("sun", "star"):
             continue
-        oc = np.array(body_world_pos(b, t), dtype="f8") - origin
-        tca = oc @ d
-        if tca < 0:
+        sp = camera.world_to_screen(body_world_pos(b, t))
+        if sp is None:
             continue
-        if oc @ oc - tca * tca <= (b.radius + 0.4) ** 2 and tca < best_t:
-            best, best_t = b, tca
+        d = math.hypot(sp[0] - pos[0], sp[1] - pos[1])
+        if d < best_d:
+            best, best_d = b, d
     return best
 
 
@@ -322,6 +323,18 @@ def main():
                             net.send_ctrl("resume" if not running else "pause")
                         else:
                             running = not running
+                    elif event.key == pygame.K_l:
+                        b = pick_body(camera, world, (W // 2, H // 2), sim_time)
+                        if b is not None:
+                            surf = Surface(planet_kind_from_body(b))
+                            if surf_renderer is None:
+                                surf_renderer = SurfaceRenderer(ctx, renderer.tex)
+                            pygame.event.set_grab(True)
+                            pygame.mouse.set_visible(False)
+                            pygame.mouse.get_rel()
+                            state = "surface"
+                        else:
+                            world.notify("Point the view near a planet, then press L")
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if state == "surface":
@@ -558,7 +571,8 @@ def draw_hud(hud, world, selected, speed, running, preview, mouse, show_help, ne
         _draw_tooltip(hud, world, selected, preview, mouse)
     if world.message_t > 0.0 and world.message:
         hud.text_center(W // 2, H // 2 - 90, world.message, 30, (255, 175, 150), "ui")
-    hud.text(14, H - 24, "H: help    Esc: menu", 15, (150, 160, 175), "body")
+    hud.text(14, H - 24, "H: help    ·    L: land on a planet    ·    Esc: menu",
+             15, (150, 160, 175), "body")
     if show_help:
         _draw_help(hud, world, W, H)
     hud.end()
@@ -651,6 +665,7 @@ def _draw_help(hud, world, W, H):
         ("Drag / Scroll", "rotate view / zoom"),
         ("+ / -  ·  Space", "change speed / pause"),
         ("F11  ·  Esc", "fullscreen / back to menu"),
+        ("L  /  right-click", "land on a planet — first-person mode"),
         ("Co-op", "Host or Join from the menu to play together"),
     ]
     pw, ph = 640, 44 + 30 * len(lines) + 40
