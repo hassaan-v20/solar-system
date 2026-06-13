@@ -122,7 +122,7 @@ func _tick_waves(delta: float, size: int) -> void:
 		_spawn_wave(size)
 
 func _spawn_wave(count: int) -> void:
-	var scene := get_tree().current_scene
+	var scene := _spawn_root()
 	for i in count:
 		var drone := EnemyDrone.new()
 		if _enemy_def != null:
@@ -138,7 +138,13 @@ func _spawn_extraction_zone() -> void:
 	var dir := _rand_dir()
 	zone.position = ship.global_position + dir * mission_def.extraction_distance
 	zone.ship_entered.connect(_succeed)
-	get_tree().current_scene.add_child(zone)
+	_spawn_root().add_child(zone)
+
+## Where spawned drones / zones are parented. In-game this is the raid scene root
+## (the MissionManager's parent); in tests it's a node the test owns. Decoupling
+## from get_tree().current_scene is what makes the FSM unit-testable.
+func _spawn_root() -> Node:
+	return get_parent()
 
 func _clear_enemies() -> void:
 	for e in get_tree().get_nodes_in_group("enemies"):
