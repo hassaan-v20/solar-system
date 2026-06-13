@@ -49,9 +49,11 @@ sky**, in their real directions.
 - **Five alien species** (critter, alien, brute, stalker, flyer) that **wander,
   then chase** when you get close, each with its own look and movement (the flyer
   hovers!). Kill them for loot: **hide, bone, crystal, alloy**.
-- **Craft** better gear with keys **1-4**: Alloy Blade and Plasma Blaster
-  (weapons), Hide and Plated Armour. Better weapons hit harder/farther; armour
-  reduces the damage you take.
+- Your equipped **weapon is shown in first person** and swings when you attack.
+- **Craft** better gear with keys **1-5**: Alloy Blade, **Hunter's Bow** and
+  Plasma Blaster (weapons), Hide and Plated Armour. Better weapons hit
+  harder/farther; armour reduces the damage you take.
+- Aliens are **lit and shaded** for a 3D look (not flat sprites).
 
 Single-player for now (on-foot co-op is a future step). Terrain is heightmap-based
 — true caves/overhangs are a future addition.

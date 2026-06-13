@@ -103,6 +103,9 @@ class Hud:
     def panel(self, px, py, w, h, color=(0.0, 0.0, 0.0, 0.45)):
         self._draw(px, py, w, h, self.white, color)
 
+    def sprite(self, px, py, w, h, tex, tint=(1.0, 1.0, 1.0, 1.0)):
+        self._draw(px, py, w, h, tex, tint)
+
     def border_panel(self, px, py, w, h, fill=(0.04, 0.05, 0.09, 0.72),
                      border=(0.45, 0.55, 0.85, 0.55), bw=2):
         self.panel(px - bw, py - bw, w + 2 * bw, h + 2 * bw, border)

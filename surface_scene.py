@@ -5,7 +5,7 @@ import moderngl
 import numpy as np
 import pyrr
 
-from sprites import generate_creature, generate_orb, generate_rock
+from sprites import generate_creature, generate_orb, generate_rock, generate_weapon
 from surface import CREATURES, ITEM_COLOR
 
 SHADER_DIR = Path(__file__).parent / "shaders"
@@ -45,6 +45,8 @@ class SurfaceRenderer:
         self.tex_creature = {var: self._sprite(generate_creature(var)) for var in range(5)}
         self.tex_orb = self._sprite(generate_orb(64))
         self.tex_rock = self._sprite(generate_rock(96))
+        self.weapon_tex = {k: self._sprite(generate_weapon(k))
+                           for k in ("fists", "blade", "bow", "blaster")}
 
         self._terrain = None
         self._terrain_vao = None
@@ -123,6 +125,7 @@ class SurfaceRenderer:
         self.prog_bb["right"].value = tuple(float(v) for v in right)
         self.prog_bb["up"].value = (0.0, 1.0, 0.0)
         self.prog_bb["tex"].value = 0
+        self.prog_bb["lit"].value = 0
 
         # Celestial bodies (Sun + planets) far in the sky.
         BIGR = 480.0
@@ -145,7 +148,8 @@ class SurfaceRenderer:
             self.prog_bb["size"].value = rs
             self.bb_vao.render(moderngl.TRIANGLE_STRIP)
 
-        # Creatures (with hop / hover animation).
+        # Creatures (with hop / hover animation), lit volumetrically.
+        self.prog_bb["lit"].value = 1
         tnow = surf.time
         for c in surf.creatures:
             if not c.alive:
@@ -164,6 +168,7 @@ class SurfaceRenderer:
             self.bb_vao.render(moderngl.TRIANGLE_STRIP)
 
         # Loot.
+        self.prog_bb["lit"].value = 0
         self.tex_orb.use(0)
         for l in surf.loot:
             if not l.alive:

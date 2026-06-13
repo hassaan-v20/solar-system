@@ -1,7 +1,7 @@
 """Procedural galaxy / nebula sprites for the distant background billboards."""
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFilter
 
 
 def _smooth_noise(size, cells, rng):
@@ -77,11 +77,81 @@ def generate_creature(variant=0, size=128):
             mask |= (np.abs(u - tx) < 0.025) & (v < 0.46)
         eyes |= disc(0.44, 0.63, 0.05) | disc(0.56, 0.63, 0.05)
 
-    grad = np.broadcast_to((0.45 + 0.55 * v).astype(np.float32), (size, size))
-    rgb = np.where(mask, grad, 0.0).astype(np.float32)
-    rgb = np.where(eyes, 1.0, rgb)
-    alpha = (mask | eyes).astype(np.float32)
-    return np.stack([(rgb * 255).astype(np.uint8)] * 3 + [(alpha * 255).astype(np.uint8)], axis=-1)
+    # Channels for the lit shader: R = albedo, G = height (bulge), B = eye glow, A = mask.
+    maskf = mask.astype(np.float32)
+    blur = Image.fromarray((maskf * 255).astype(np.uint8)).filter(
+        ImageFilter.GaussianBlur(size * 0.05))
+    height = np.asarray(blur, dtype=np.float32) / 255.0 * maskf
+    if height.max() > 0:
+        height /= height.max()
+    R = np.where(mask, 0.88, 0.0).astype(np.float32)
+    G = height
+    B = eyes.astype(np.float32)
+    A = (mask | eyes).astype(np.float32)
+    return np.stack([(R * 255).astype(np.uint8), (G * 255).astype(np.uint8),
+                     (B * 255).astype(np.uint8), (A * 255).astype(np.uint8)], axis=-1)
+
+
+def _seg(u, w, p0, p1, th):
+    ax, ay = p0
+    bx, by = p1
+    abx, aby = bx - ax, by - ay
+    L2 = abx * abx + aby * aby + 1e-6
+    t = np.clip(((u - ax) * abx + (w - ay) * aby) / L2, 0.0, 1.0)
+    cx, cy = ax + t * abx, ay + t * aby
+    return (u - cx) ** 2 + (w - cy) ** 2 <= th * th
+
+
+def generate_weapon(kind, size=256):
+    """First-person weapon viewmodel sprite (full colour, row 0 = top)."""
+    w = np.linspace(0.0, 1.0, size).reshape(-1, 1)   # 0 top -> 1 bottom
+    u = np.linspace(0.0, 1.0, size).reshape(1, -1)
+    rgb = np.zeros((size, size, 3), np.float32)
+    a = np.zeros((size, size), np.float32)
+
+    def paint(mask, col):
+        for c in range(3):
+            rgb[..., c] = np.where(mask, col[c], rgb[..., c])
+        a[mask] = 1.0
+
+    if kind == "blade":
+        blade = _seg(u, w, (0.30, 0.92), (0.80, 0.16), 0.035)
+        edge = _seg(u, w, (0.32, 0.90), (0.80, 0.18), 0.012)
+        guard = _seg(u, w, (0.18, 0.74), (0.46, 0.92), 0.028)
+        grip = _seg(u, w, (0.20, 0.78), (0.30, 0.99), 0.022)
+        paint(blade, (0.62, 0.66, 0.72))
+        paint(edge, (0.92, 0.95, 1.0))
+        paint(guard, (0.80, 0.65, 0.25))
+        paint(grip, (0.35, 0.22, 0.12))
+    elif kind == "bow":
+        ang = np.arctan2(w - 0.5, u - 0.28)
+        r = np.hypot(u - 0.28, w - 0.5)
+        arc = (np.abs(r - 0.42) < 0.03) & (np.abs(ang) < 1.25)
+        string = _seg(u, w, (0.28 + 0.42 * np.cos(1.25), 0.5 - 0.42 * np.sin(1.25)),
+                      (0.28 + 0.42 * np.cos(1.25), 0.5 + 0.42 * np.sin(1.25)), 0.006)
+        arrow = _seg(u, w, (0.30, 0.5), (0.78, 0.5), 0.012)
+        tip = _seg(u, w, (0.78, 0.5), (0.86, 0.5), 0.03)
+        paint(arc, (0.45, 0.28, 0.14))
+        paint(string, (0.9, 0.9, 0.85))
+        paint(arrow, (0.6, 0.45, 0.3))
+        paint(tip, (0.85, 0.88, 0.95))
+    elif kind == "blaster":
+        body = (np.abs(u - 0.5) < 0.16) & (np.abs(w - 0.5) < 0.10)
+        barrel = (u > 0.5) & (u < 0.92) & (np.abs(w - 0.46) < 0.045)
+        grip = _seg(u, w, (0.42, 0.58), (0.34, 0.92), 0.05)
+        glow = (u - 0.90) ** 2 + (w - 0.46) ** 2 <= 0.04 ** 2
+        paint(body, (0.30, 0.34, 0.42))
+        paint(barrel, (0.45, 0.50, 0.58))
+        paint(grip, (0.22, 0.24, 0.30))
+        paint(glow, (0.5, 1.0, 1.0))
+    else:  # fists
+        fist = ((u - 0.5) / 0.22) ** 2 + ((w - 0.7) / 0.22) ** 2 <= 1.0
+        knuckles = ((u - 0.5) / 0.22) ** 2 + ((w - 0.55) / 0.07) ** 2 <= 1.0
+        paint(fist | knuckles, (0.80, 0.62, 0.5))
+
+    out = np.concatenate([(rgb * 255).astype(np.uint8),
+                          (a[..., None] * 255).astype(np.uint8)], axis=-1)
+    return out
 
 
 def generate_rock(size=96, seed=7):

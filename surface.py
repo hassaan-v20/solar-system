@@ -23,6 +23,7 @@ AGGRO         = 36.0
 WEAPONS = {
     "fists":   {"name": "Fists",          "dmg": 7,  "range": 3.0,  "cd": 0.45},
     "blade":   {"name": "Alloy Blade",    "dmg": 18, "range": 3.8,  "cd": 0.40},
+    "bow":     {"name": "Hunter's Bow",   "dmg": 24, "range": 26.0, "cd": 0.55},
     "blaster": {"name": "Plasma Blaster", "dmg": 34, "range": 30.0, "cd": 0.30},
 }
 ARMORS = {
@@ -33,12 +34,13 @@ ARMORS = {
 # recipe key -> (slot, cost). recipe key doubles as the weapon/armor key.
 RECIPES = {
     "blade":   ("weapon", {"bone": 3, "crystal": 2}),
+    "bow":     ("weapon", {"bone": 2, "hide": 3}),
     "hide":    ("armor",  {"hide": 5}),
     "blaster": ("weapon", {"alloy": 4, "crystal": 5}),
     "plated":  ("armor",  {"alloy": 6, "hide": 4}),
 }
-RECIPE_ORDER = ["blade", "hide", "blaster", "plated"]
-RECIPE_LABEL = {"blade": "Alloy Blade", "hide": "Hide Armour",
+RECIPE_ORDER = ["blade", "bow", "hide", "blaster", "plated"]
+RECIPE_LABEL = {"blade": "Alloy Blade", "bow": "Hunter's Bow", "hide": "Hide Armour",
                 "blaster": "Plasma Blaster", "plated": "Plated Armour"}
 
 CREATURES = {

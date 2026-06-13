@@ -343,9 +343,10 @@ def main():
                         state = "playing"
                     elif event.key == pygame.K_SPACE:
                         surf.jump()
-                    elif event.key in (pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4):
-                        idx = [pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4].index(event.key)
-                        surf.craft(RECIPE_ORDER[idx])
+                    elif event.key in (pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5):
+                        idx = [pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5].index(event.key)
+                        if idx < len(RECIPE_ORDER):
+                            surf.craft(RECIPE_ORDER[idx])
                     continue
 
                 if event.key == pygame.K_F11:
@@ -484,7 +485,7 @@ def main():
             draw_land_menu(hud, world, W, H, mouse)
         elif state == "surface":
             surf_renderer.render(surf, W, H)
-            draw_surface_hud(hud, surf, W, H)
+            draw_surface_hud(hud, surf, W, H, surf_renderer)
         elif state == "join":
             renderer.render(World("explore"), camera, title_time, None)
             draw_join(hud, W, H, join_text, join_pw, join_focus)
@@ -768,15 +769,16 @@ def draw_land_menu(hud, world, W, H, mouse):
     hud.end()
 
 
-def draw_surface_hud(hud, surf, W, H):
+def draw_surface_hud(hud, surf, W, H, surf_renderer=None):
     hud.begin()
+
     cx, cy = W // 2, H // 2
     ch = (0.9, 0.95, 1.0, 0.85)
     hud.panel(cx - 1, cy - 10, 2, 20, ch)
     hud.panel(cx - 10, cy - 1, 20, 2, ch)
 
     hud.text(14, 12,
-             "WASD move  ·  Space jump  ·  Ctrl crouch  ·  mouse look  ·  click attack  ·  1-4 craft  ·  Esc leave",
+             "WASD move  ·  Space jump  ·  Ctrl crouch  ·  mouse look  ·  click attack  ·  1-5 craft  ·  Esc leave",
              15, (165, 175, 195), "body")
 
     # Health card.
@@ -791,11 +793,11 @@ def draw_surface_hud(hud, surf, W, H):
              f"{WEAPONS[surf.weapon]['name']}   |   {ARMORS[surf.armor]['name']}   |   Kills {surf.kills}",
              14, (210, 215, 225), "body")
 
-    # Inventory strip (bottom-centre).
+    # Inventory strip (top-centre, leaves the bottom for the weapon).
     n = len(ITEM_ORDER)
     sw, gap = 70, 8
     x0 = (W - (n * sw + (n - 1) * gap)) // 2
-    y = H - 64
+    y = 42
     for i, item in enumerate(ITEM_ORDER):
         x = x0 + i * (sw + gap)
         hud.border_panel(x, y, sw, 50, (0.05, 0.06, 0.10, 0.82), (0.3, 0.34, 0.5, 0.6), 2)
@@ -807,7 +809,7 @@ def draw_surface_hud(hud, surf, W, H):
     pw, ph = 300, 24 * len(RECIPE_ORDER) + 36
     x, cy2 = W - pw - 14, H - ph - 14
     hud.border_panel(x, cy2, pw, ph, (0.04, 0.05, 0.09, 0.82), (0.4, 0.46, 0.65, 0.6), 2)
-    hud.text(x + 14, cy2 + 8, "CRAFT  (press 1-4)", 14, (255, 230, 150), "ui")
+    hud.text(x + 14, cy2 + 8, "CRAFT  (press 1-5)", 14, (255, 230, 150), "ui")
     yy = cy2 + 34
     for i, key in enumerate(RECIPE_ORDER):
         can = surf.can_craft(key)
@@ -816,6 +818,18 @@ def draw_surface_hud(hud, surf, W, H):
         hud.text(x + 14, yy, f"[{i+1}] {RECIPE_LABEL[key]}", 13, col, "body")
         hud.text(x + pw - 96, yy, cost, 11, (175, 182, 198), "body")
         yy += 24
+
+    # First-person weapon viewmodel (bottom-centre, held in hand; swings up on attack).
+    if surf_renderer is not None:
+        wtex = surf_renderer.weapon_tex.get(surf.weapon)
+        if wtex is not None:
+            wcd = WEAPONS[surf.weapon]["cd"]
+            prog = (surf.attack_cd / wcd) if wcd > 0 else 0.0
+            vw = vh = int(min(W, H) * 0.5)
+            bob = int(8 * math.sin(surf.time * 2.0))
+            px = W // 2 - vw // 2 + int(vw * 0.10)
+            py = H - int(vh * 0.66) - int(54 * prog) + bob
+            hud.sprite(px, py, vw, vh, wtex)
 
     if surf.message_t > 0 and surf.message:
         hud.text_center(W // 2, 118, surf.message, 24, (255, 210, 170), "ui")
