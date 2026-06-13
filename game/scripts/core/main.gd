@@ -25,6 +25,9 @@ var _missile_regen: float = 0.0
 
 func _ready() -> void:
 	_rng.randomize()
+	var vp := get_viewport()
+	vp.use_taa = true
+	vp.msaa_3d = Viewport.MSAA_2X
 	_setup_input()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	add_child(Sfx.new())
@@ -157,6 +160,20 @@ func _build_environment() -> void:
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.03, 0.04, 0.08)
 	env.fog_density = 0.0011
+	# Modern post-processing for a realistic look.
+	env.ssao_enabled = true
+	env.ssao_radius = 2.0
+	env.ssao_intensity = 2.2
+	env.ssr_enabled = true
+	env.ssr_max_steps = 32
+	env.volumetric_fog_enabled = true
+	env.volumetric_fog_density = 0.003
+	env.volumetric_fog_emission = Color(0.05, 0.07, 0.14)
+	env.volumetric_fog_emission_energy = 0.3
+	env.adjustment_enabled = true
+	env.adjustment_brightness = 1.02
+	env.adjustment_contrast = 1.08
+	env.adjustment_saturation = 1.14
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
@@ -271,6 +288,7 @@ func _build_ship() -> ShipController:
 	_engine_mat.emission_energy_multiplier = 2.0
 	engine.material_override = _engine_mat
 	ship.add_child(engine)
+	_build_engine_trail(ship)
 
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
@@ -280,6 +298,42 @@ func _build_ship() -> ShipController:
 
 	add_child(ship)
 	return ship
+
+func _build_engine_trail(ship: Node3D) -> void:
+	var ps := GPUParticles3D.new()
+	ps.amount = 48
+	ps.lifetime = 0.55
+	ps.position = Vector3(0, 0, 2.3)
+	var pm := ParticleProcessMaterial.new()
+	pm.gravity = Vector3.ZERO
+	pm.direction = Vector3(0, 0, 1)          # local +z = behind the ship
+	pm.spread = 7.0
+	pm.initial_velocity_min = 10.0
+	pm.initial_velocity_max = 17.0
+	pm.scale_min = 0.4
+	pm.scale_max = 0.9
+	var grad := Gradient.new()
+	grad.set_color(0, Color(0.7, 0.9, 1.0, 1.0))
+	grad.set_color(1, Color(0.2, 0.4, 1.0, 0.0))
+	var gt := GradientTexture1D.new()
+	gt.gradient = grad
+	pm.color_ramp = gt
+	ps.process_material = pm
+	var mesh := SphereMesh.new()
+	mesh.radius = 0.28
+	mesh.height = 0.56
+	mesh.radial_segments = 6
+	mesh.rings = 4
+	var mm := StandardMaterial3D.new()
+	mm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	mm.vertex_color_use_as_albedo = true
+	mm.albedo_color = Color(1, 1, 1, 1)
+	mesh.material = mm
+	ps.draw_pass_1 = mesh
+	ps.emitting = true
+	ship.add_child(ps)
 
 func _part(parent: Node3D, mesh: Mesh, pos: Vector3, rot_deg: Vector3, mat: Material) -> void:
 	var mi := MeshInstance3D.new()
@@ -347,26 +401,62 @@ func _fire_missile() -> void:
 	EventBus.shot_fired.emit("missile")
 
 func _build_asteroids() -> void:
+	var rock := _rock_material()
 	for i in ASTEROID_COUNT:
 		var a := MeshInstance3D.new()
 		var m := SphereMesh.new()
 		var r := _rng.randf_range(1.5, 6.0)
 		m.radius = r
 		m.height = r * 2.0
-		m.radial_segments = 7
-		m.rings = 5
+		m.radial_segments = 18
+		m.rings = 12
 		a.mesh = m
-		var mat := StandardMaterial3D.new()
-		var g := _rng.randf_range(0.22, 0.42)
-		mat.albedo_color = Color(g, g * 0.93, g * 0.86)
-		mat.metallic = 0.1
-		mat.roughness = 1.0
-		a.material_override = mat
+		a.material_override = rock
 		a.position = _random_unit() * _rng.randf_range(45.0, 280.0)
-		a.scale = Vector3(_rng.randf_range(0.7, 1.4), _rng.randf_range(0.7, 1.4), _rng.randf_range(0.7, 1.4))
+		# Irregular, lumpy silhouettes.
+		a.scale = Vector3(_rng.randf_range(0.6, 1.6), _rng.randf_range(0.6, 1.5), _rng.randf_range(0.6, 1.6))
 		a.rotation = Vector3(_rng.randf() * TAU, _rng.randf() * TAU, _rng.randf() * TAU)
 		add_child(a)
-		_asteroids.append({"node": a, "axis": _random_unit(), "speed": _rng.randf_range(0.05, 0.4)})
+		_asteroids.append({"node": a, "axis": _random_unit(), "speed": _rng.randf_range(0.05, 0.35)})
+
+func _rock_material() -> StandardMaterial3D:
+	# Procedural PBR rock: noise albedo mottling + a noise normal map, mapped in
+	# world space (triplanar) so every asteroid samples a different patch — varied
+	# craggy surfaces from a single shared material, no UVs or art files needed.
+	var an := FastNoiseLite.new()
+	an.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	an.frequency = 0.9
+	an.fractal_octaves = 5
+	var alb := NoiseTexture2D.new()
+	alb.width = 256
+	alb.height = 256
+	alb.seamless = true
+	alb.noise = an
+
+	var nn := FastNoiseLite.new()
+	nn.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	nn.frequency = 1.6
+	nn.fractal_octaves = 4
+	var nrm := NoiseTexture2D.new()
+	nrm.width = 256
+	nrm.height = 256
+	nrm.seamless = true
+	nrm.as_normal_map = true
+	nrm.bump_strength = 6.0
+	nrm.noise = nn
+
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.46, 0.41, 0.36)
+	m.albedo_texture = alb
+	m.normal_enabled = true
+	m.normal_texture = nrm
+	m.normal_scale = 1.6
+	m.roughness = 0.95
+	m.metallic = 0.02
+	m.uv1_triplanar = true
+	m.uv1_world_triplanar = true
+	m.uv1_scale = Vector3(0.06, 0.06, 0.06)
+	return m
 
 # ── combat / waves ─────────────────────────────────────────────────────────────
 func _spawn_wave() -> void:

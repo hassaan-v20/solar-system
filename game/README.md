@@ -41,6 +41,14 @@ new random contract.
 camera shake, punchy blaster audio, three distant suns lighting the sector (bright
 and readable), stronger bloom, and more detailed ships.
 
+**Realistic-look pass (engine features, no art files):** PBR **rock asteroids**
+(procedural noise albedo + normal map, world-triplanar so each rock looks unique);
+a richer **layered nebula + galactic-band starfield**; **GPU particles** for an
+engine thrust trail and explosion debris; and modern post — **SSAO, SSR,
+volumetric fog, colour grading, stronger bloom, and TAA/MSAA**. Note: the bigger
+fidelity leap (modelled `.glb` ships + PBR textures) is the next step and just
+needs art assets.
+
 ## Run it
 
 ```bash

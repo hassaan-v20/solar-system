@@ -38,27 +38,35 @@ float fbm(vec3 p) {
 void sky() {
 	vec3 d = normalize(EYEDIR);
 
-	// Stars across three scales so there's a mix of large and tiny pinpoints.
+	// Denser stars and dust toward the galactic plane (y ~ 0).
+	float band = exp(-pow(d.y * 2.3, 2.0));
+
+	// Stars across four scales with varied colours; brighter near the band.
 	float star = 0.0;
 	vec3 scol = vec3(1.0);
-	for (int i = 0; i < 3; i++) {
-		float sc = 230.0 * pow(2.0, float(i));
+	for (int i = 0; i < 4; i++) {
+		float sc = 200.0 * pow(2.0, float(i));
 		vec3 q = floor(d * sc);
 		float h = hash13(q);
-		if (h > star_density) {
-			float b = (h - star_density) / (1.0 - star_density);
-			star += b * b * (0.9 / float(i + 1));
+		float thr = mix(star_density, star_density - 0.004, band);
+		if (h > thr) {
+			float b = (h - thr) / (1.0 - thr);
+			star += b * b * (1.0 / float(i + 1));
 			float t = hash13(q + 7.0);
-			scol = mix(vec3(0.7, 0.82, 1.0), vec3(1.0, 0.86, 0.7), t);
+			scol = mix(vec3(0.65, 0.78, 1.0), vec3(1.0, 0.84, 0.66), t);
 		}
 	}
 
-	// Soft nebula clouds.
-	float n = fbm(d * 2.2 + 11.0);
-	n = smoothstep(0.42, 0.95, n);
-	vec3 neb = mix(vec3(0.05, 0.03, 0.10), vec3(0.12, 0.06, 0.22), fbm(d * 4.0));
-	vec3 neb2 = mix(vec3(0.02, 0.06, 0.10), vec3(0.04, 0.12, 0.16), fbm(d * 3.0 + 5.0));
+	// Layered, coloured nebula.
+	float n1 = smoothstep(0.45, 0.95, fbm(d * 2.0 + 11.0));
+	float n2 = smoothstep(0.50, 0.96, fbm(d * 3.6 + 40.0));
+	float n3 = smoothstep(0.58, 0.95, fbm(d * 1.4 + 70.0));
+	vec3 neb = vec3(0.10, 0.05, 0.22) * n1
+			 + vec3(0.03, 0.12, 0.16) * n2
+			 + vec3(0.18, 0.05, 0.11) * n3;
+	neb *= (0.45 + 0.9 * band) * nebula_strength;
 
-	vec3 base = vec3(0.006, 0.009, 0.018);
-	COLOR = base + (neb + neb2) * n * nebula_strength + scol * star;
+	vec3 dust = vec3(0.018, 0.026, 0.045) * band;
+	vec3 base = vec3(0.004, 0.006, 0.013);
+	COLOR = base + neb + dust + scol * star * (1.0 + 0.6 * band);
 }

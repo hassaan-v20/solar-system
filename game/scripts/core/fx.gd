@@ -17,6 +17,46 @@ func _on_hit(team: String, at: Vector3) -> void:
 func _on_boom(at: Vector3) -> void:
 	burst(at, Color(1.0, 0.62, 0.25), 2.4, 0.5, 6.0)
 	flash(at, Color(1.0, 0.6, 0.3), 10.0, 7.0, 0.4)
+	_debris(at)
+
+func _debris(at: Vector3) -> void:
+	if world == null:
+		return
+	var ps := GPUParticles3D.new()
+	ps.one_shot = true
+	ps.explosiveness = 1.0
+	ps.amount = 30
+	ps.lifetime = 0.9
+	var pm := ParticleProcessMaterial.new()
+	pm.gravity = Vector3.ZERO
+	pm.direction = Vector3(0, 1, 0)
+	pm.spread = 180.0
+	pm.initial_velocity_min = 14.0
+	pm.initial_velocity_max = 34.0
+	pm.damping_min = 8.0
+	pm.damping_max = 16.0
+	pm.scale_min = 0.2
+	pm.scale_max = 0.55
+	var grad := Gradient.new()
+	grad.set_color(0, Color(1.0, 0.85, 0.45, 1.0))
+	grad.set_color(1, Color(0.6, 0.12, 0.05, 0.0))
+	var gt := GradientTexture1D.new()
+	gt.gradient = grad
+	pm.color_ramp = gt
+	ps.process_material = pm
+	var mesh := BoxMesh.new()
+	mesh.size = Vector3(0.3, 0.3, 0.3)
+	var mm := StandardMaterial3D.new()
+	mm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	mm.vertex_color_use_as_albedo = true
+	mesh.material = mm
+	ps.draw_pass_1 = mesh
+	world.add_child(ps)
+	ps.global_position = at
+	ps.emitting = true
+	get_tree().create_timer(1.4).timeout.connect(ps.queue_free)
 
 func burst(at: Vector3, col: Color, size: float, dur: float, energy: float) -> void:
 	if world == null:
