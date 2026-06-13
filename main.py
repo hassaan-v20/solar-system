@@ -22,6 +22,12 @@ _NUM_KEYS = [pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5,
 KIND_KEYS = {_NUM_KEYS[i]: k for i, k in enumerate(HOTBAR) if i < len(_NUM_KEYS)}
 MODE_SPEED = {"explore": 1.0, "creative": 0.10, "survival": 0.10}
 CLICK_PIXELS = 6
+PLAYER_COLORS = [(0.45, 0.80, 1.00), (1.00, 0.60, 0.40), (0.55, 1.00, 0.50),
+                 (1.00, 0.55, 0.90), (1.00, 0.90, 0.45), (0.70, 0.70, 1.00)]
+
+
+def player_color(pid):
+    return PLAYER_COLORS[(pid or 0) % len(PLAYER_COLORS)]
 
 
 # ── shared UI layout ───────────────────────────────────────────────────────────
@@ -126,6 +132,7 @@ def main():
     players = []
     net = None
     host_proc = None
+    cam_timer = 0.0
     join_text = f"ws://localhost:{PORT}"
     dragging = False
     moved = 0.0
@@ -148,6 +155,12 @@ def main():
                 snap = net.get_world()
                 if snap is not None:
                     world, sim_time, speed, running, players = snap
+                cam_timer += dt
+                if cam_timer >= 0.1 and net.status == "connected":
+                    cam_timer = 0.0
+                    cur = camera.ground_hit(*mouse)
+                    net.send_cam([float(v) for v in camera.position],
+                                 None if cur is None else [float(cur[0]), float(cur[1]), float(cur[2])])
             else:
                 players = []
                 if running:
@@ -270,9 +283,23 @@ def main():
                 W, H = event.w, event.h
 
         if state == "playing":
+            avatars, avatar_labels = [], []
+            if net is not None and net.pid is not None:
+                for pl in players:
+                    if pl.get("pid") == net.pid:
+                        continue
+                    col = player_color(pl.get("pid", 0))
+                    avatars.append({"cursor": pl.get("cursor"), "color": col})
+                    cur = pl.get("cursor")
+                    if cur:
+                        sp = camera.world_to_screen(cur)
+                        if sp and 0 <= sp[0] <= W and 0 <= sp[1] <= H:
+                            avatar_labels.append((sp[0], sp[1], pl.get("name", ""),
+                                                  tuple(int(c * 255) for c in col)))
             preview = build_preview(camera, world, selected, dragging)
-            renderer.render(world, camera, sim_time, preview)
-            draw_hud(hud, world, selected, speed, running, preview, mouse, show_help, net, players)
+            renderer.render(world, camera, sim_time, preview, avatars)
+            draw_hud(hud, world, selected, speed, running, preview, mouse, show_help,
+                     net, players, avatar_labels)
         elif state == "join":
             renderer.render(World("explore"), camera, title_time, None)
             draw_join(hud, W, H, join_text)
@@ -376,13 +403,16 @@ def _draw_button(hud, rect, label, hover, enabled):
 
 
 # ── in-game HUD ────────────────────────────────────────────────────────────────
-def draw_hud(hud, world, selected, speed, running, preview, mouse, show_help, net, players):
+def draw_hud(hud, world, selected, speed, running, preview, mouse, show_help, net, players,
+             avatar_labels=None):
     hud.begin()
     W, H = hud.width, hud.height
     _draw_mode_badges(hud, world, W, mouse)
     _draw_status_card(hud, world, running, speed)
     if net is not None:
         _draw_coop(hud, W, net, players)
+    for sx, sy, name, col in (avatar_labels or []):
+        hud.text(int(sx) + 12, int(sy) - 10, name, 14, col, "ui")
     if world.mode in ("creative", "survival"):
         _draw_hotbar(hud, world, selected, W, H, mouse)
         _draw_tooltip(hud, world, selected, preview, mouse)

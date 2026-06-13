@@ -110,10 +110,13 @@ comets, and switch modes — changes show up for all players instantly.
 can reach the address can join and edit the world. Only share it with people you
 trust, and prefer Tailscale, which keeps it private to your devices.
 
+You can see each other live: a glowing coloured marker and the player's name
+show where every teammate is pointing, so you can build together and say "put it
+*here*". The co-op badge shows how many players are online.
+
 Architecture: the `World` (`world.py`) is fully command-driven (`world.apply`)
 and JSON-serialisable, so the server just applies commands and broadcasts state
 snapshots (~20 Hz); clients extrapolate between snapshots for smooth motion.
-Next up: free-fly avatars so you can see where each other is looking.
 
 ## Credits
 

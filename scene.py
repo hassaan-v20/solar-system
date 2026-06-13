@@ -188,7 +188,7 @@ class SolarSystem:
             self.pp_fbos.append(self.ctx.framebuffer([t]))
 
     # ── render ──────────────────────────────────────────────────────────────
-    def render(self, world, camera, time, preview=None):
+    def render(self, world, camera, time, preview=None, avatars=None):
         if self.scene_fbo is None:
             self.resize(camera.width, camera.height)
 
@@ -276,6 +276,20 @@ class SolarSystem:
             p["is_earth"].value = 0
             self._get_tex("2k_moon.jpg").use(0)
             self.sphere_planet.render()
+
+        # Co-op avatars: a glowing marker where each other player is pointing.
+        if avatars:
+            for av in avatars:
+                cur = av.get("cursor")
+                if not cur:
+                    continue
+                pos = np.array(cur, dtype="f4")
+                p["model"].write(self._body_model(pos, 0.55, 0.0, time, 0.15))
+                p["tint"].value = tuple(av["color"])
+                p["emit"].value = 1.8
+                p["is_earth"].value = 0
+                self._get_tex("2k_moon.jpg").use(0)
+                self.sphere_planet.render()
 
         # Preview body marker (glowing ghost at the cursor).
         if preview is not None:

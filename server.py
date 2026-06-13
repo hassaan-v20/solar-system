@@ -32,7 +32,7 @@ class GameServer:
     async def handler(self, ws, path=None):
         pid = self.next_pid
         self.next_pid += 1
-        self.clients[ws] = {"pid": pid, "name": f"Player{pid}"}
+        self.clients[ws] = {"pid": pid, "name": f"Player{pid}", "pos": None, "cursor": None}
         await ws.send(json.dumps({"t": "welcome", "pid": pid, "mode": self.world.mode}))
         self.world.notify(f"Player{pid} joined")
         print(f"[server] Player{pid} connected ({len(self.clients)} online)")
@@ -75,6 +75,9 @@ class GameServer:
                 self.world.notify(f"{info.get('name')} switched to {self.world.mode}")
         elif t == "name":
             info["name"] = str(msg.get("name", info.get("name")))[:16]
+        elif t == "cam":
+            info["pos"] = msg.get("pos")
+            info["cursor"] = msg.get("cursor")
 
     def snapshot(self):
         return json.dumps({
@@ -82,7 +85,9 @@ class GameServer:
             "world": self.world.to_dict(self.sim_time),
             "speed": self.speed,
             "running": self.running,
-            "players": [c["name"] for c in self.clients.values()],
+            "players": [{"pid": c["pid"], "name": c["name"],
+                         "pos": c["pos"], "cursor": c["cursor"]}
+                        for c in self.clients.values()],
         })
 
     async def ticker(self):

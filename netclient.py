@@ -98,6 +98,9 @@ class NetClient:
     def send_ctrl(self, action, value=None):
         self._sendq.put({"t": "ctrl", "action": action, "value": value})
 
+    def send_cam(self, pos, cursor):
+        self._sendq.put({"t": "cam", "pos": pos, "cursor": cursor})
+
     def get_world(self):
         """Return (world, sim_time, speed, running, players) or None if no snapshot yet."""
         with self._lock:

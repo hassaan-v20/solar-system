@@ -70,6 +70,18 @@ class Camera:
         direction /= np.linalg.norm(direction)
         return self.position.astype("f8"), direction
 
+    def world_to_screen(self, p):
+        """Project a world point to pixel coords, or None if behind the camera."""
+        view = self.get_view_matrix().T
+        proj = self.get_projection_matrix().T
+        clip = proj @ view @ np.array([p[0], p[1], p[2], 1.0], dtype="f8")
+        if clip[3] <= 1e-6:
+            return None
+        ndc = clip[:3] / clip[3]
+        sx = (ndc[0] * 0.5 + 0.5) * self.width
+        sy = (1.0 - (ndc[1] * 0.5 + 0.5)) * self.height
+        return (sx, sy)
+
     def ground_hit(self, mx, my):
         """Where the cursor ray meets the orbital plane (y=0), or None."""
         origin, d = self.screen_ray(mx, my)
