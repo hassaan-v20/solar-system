@@ -21,7 +21,7 @@ Switch any time with **F1 / F2 / F3**:
   **comets** drift in and destroy planets on impact — **click a comet to deflect
   it**. The pressure ramps over time. Build fast, defend faster.
 
-![survival](mode_survival.png)
+![survival](survival.png)
 
 ## Run it
 
@@ -38,12 +38,13 @@ decade). Developed and tested on an AMD Radeon RX 6600 XT.
 | Input              | Action                                  |
 | ------------------ | --------------------------------------- |
 | `F1` / `F2` / `F3` | Explore / Creative / Survival mode      |
-| `1` `2` `3` `4`    | Select body: Moon / Rocky / Terran / Gas |
+| `1` – `8`          | Pick body: Moon, Rocky, Ocean, Desert, Lava, Ice, Gas, Star |
 | Left click         | Place selected body, or deflect a comet |
 | Drag mouse         | Orbit the camera                        |
 | Scroll wheel       | Zoom in / out                           |
 | `+` / `-`          | Speed up / slow down time               |
 | `Space`            | Pause / resume                          |
+| `H`                | Toggle the help overlay                 |
 | `R`                | Reset the camera                        |
 | `Esc`              | Quit                                    |
 
@@ -54,9 +55,10 @@ main.py        window, input, modes, HUD, main loop
 world.py       authoritative game state: bodies, comets, energy, commands
 scene.py       renderer: planets, skybox, rings, comets, bloom pipeline
 camera.py      orbital camera + mouse-ray picking
-hud.py         2D text/panel overlay
+hud.py         2D text/panel overlay (mode badges, hotbar, help)
+sprites.py     procedural galaxy / nebula sprite generation
 mesh.py        sphere / ring / quad geometry
-shaders/       GLSL: planets, skybox, clouds, rings, bloom passes
+shaders/       GLSL: planets, skybox, galaxies, clouds, rings, bloom passes
 textures/      planet + galaxy texture maps
 ```
 

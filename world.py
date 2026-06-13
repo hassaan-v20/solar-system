@@ -26,15 +26,37 @@ COMET_BASE_GAP   = 9.0     # seconds between comet spawns at the start
 COMET_MIN_GAP    = 2.5     # hardest spawn cadence
 COMET_RAMP       = 0.02    # how fast the cadence tightens per second survived
 
-# kind -> (display, texture, radius, special, cost)
+# Ordered build palette. Each entry is the hot-key kind -> properties.
+# swatch is the HUD colour (0-1); tint multiplies the texture in the shader.
 BODY_TYPES = {
-    "moon":   ("Moon",   "2k_moon.jpg",          0.30, None,     40.0),
-    "rocky":  ("Rocky",  None,                   0.60, None,     90.0),
-    "terran": ("Terran", "2k_earth_daymap.jpg",  1.00, "earth", 200.0),
-    "gas":    ("Gas",    None,                   2.60, "gas",   350.0),
+    "moon":   dict(name="Moon",   swatch=(0.70, 0.70, 0.72), tex="2k_moon.jpg",
+                   radius=0.30, special=None,    tint=(1.00, 1.00, 1.00), emit=0.0, cost=40.0),
+    "rocky":  dict(name="Rocky",  swatch=(0.78, 0.60, 0.45), tex="2k_mercury.jpg",
+                   radius=0.55, special=None,    tint=(1.10, 0.95, 0.85), emit=0.0, cost=90.0),
+    "ocean":  dict(name="Ocean",  swatch=(0.30, 0.55, 0.95), tex="2k_earth_daymap.jpg",
+                   radius=1.00, special="earth", tint=(1.00, 1.00, 1.00), emit=0.0, cost=200.0),
+    "desert": dict(name="Desert", swatch=(0.85, 0.70, 0.40), tex="2k_venus_surface.jpg",
+                   radius=0.80, special=None,    tint=(1.15, 1.00, 0.60), emit=0.0, cost=120.0),
+    "lava":   dict(name="Lava",   swatch=(0.95, 0.35, 0.15), tex="2k_venus_surface.jpg",
+                   radius=0.70, special=None,    tint=(1.50, 0.55, 0.25), emit=0.35, cost=150.0),
+    "ice":    dict(name="Ice",    swatch=(0.72, 0.85, 1.00), tex="2k_moon.jpg",
+                   radius=0.70, special=None,    tint=(0.70, 0.85, 1.15), emit=0.0, cost=130.0),
+    "gas":    dict(name="Gas",    swatch=(0.90, 0.75, 0.50), tex=None,
+                   radius=2.60, special="gas",   tint=(1.00, 1.00, 1.00), emit=0.0, cost=350.0),
+    "star":   dict(name="Star",   swatch=(1.00, 0.85, 0.40), tex="2k_sun.jpg",
+                   radius=2.50, special="star",  tint=(1.00, 0.85, 0.40), emit=5.0, cost=600.0),
 }
 ROCKY_TEX = ["2k_mercury.jpg", "2k_mars.jpg", "2k_venus_surface.jpg", "2k_moon.jpg"]
 GAS_TEX   = ["2k_jupiter.jpg", "2k_uranus.jpg", "2k_neptune.jpg"]
+
+# Placed stars pick a random class: (tint, radius, emit).
+STAR_CLASSES = [
+    ((1.00, 0.85, 0.40), 2.5, 5.0),   # yellow dwarf
+    ((1.00, 0.45, 0.25), 4.2, 4.5),   # red giant
+    ((0.60, 0.72, 1.20), 2.2, 6.0),   # blue
+    ((1.00, 1.00, 1.05), 1.4, 7.0),   # white dwarf
+    ((1.00, 0.60, 0.30), 3.2, 5.0),   # orange
+]
 
 
 def kepler_period(dist):
@@ -60,10 +82,12 @@ class Body:
     dist: float
     period: float
     tilt: float = 0.0
-    special: str = None        # 'sun' | 'earth' | 'saturn' | 'gas' | None
+    special: str = None        # 'sun' | 'earth' | 'saturn' | 'star' | None
     phase: float = 0.0
     owner: str = ""
     alive: bool = True
+    tint: tuple = (1.0, 1.0, 1.0)
+    emit: float = 0.0
 
 
 @dataclass
@@ -127,7 +151,8 @@ class World:
         return self.mode == "survival"
 
     def planets(self):
-        return [b for b in self.bodies if b.special != "sun" and b.alive]
+        return [b for b in self.bodies
+                if b.alive and b.special not in ("sun", "star")]
 
     # ── command interface (what the co-op server replays) ───────────────────────
     def apply(self, cmd):
@@ -143,7 +168,7 @@ class World:
         spec = BODY_TYPES.get(kind)
         if not spec:
             return False
-        _disp, tex, radius, special, cost = spec
+        cost = spec["cost"]
         if not self.infinite_energy and self.energy < cost:
             self.notify("Not enough energy")
             return False
@@ -158,15 +183,23 @@ class World:
         w = 2.0 * math.pi * ORBIT_SPEED / period
         phase = theta - w * t
 
+        tex = spec["tex"]
+        radius = spec["radius"]
+        special = spec["special"]
+        tint = spec["tint"]
+        emit = spec["emit"]
+
         if special == "gas":
             tex = random.choice(GAS_TEX)
             special = "saturn" if random.random() < 0.5 else None  # half get rings
+        elif special == "star":
+            tint, radius, emit = random.choice(STAR_CLASSES)
         elif tex is None:
             tex = random.choice(ROCKY_TEX)
 
         tilt = random.uniform(0.0, 30.0)
-        self.bodies.append(Body(kind.title(), tex, radius, dist, period, tilt,
-                                special, phase, owner))
+        self.bodies.append(Body(spec["name"], tex, radius, dist, period, tilt,
+                                special, phase, owner, tint=tint, emit=emit))
         if not self.infinite_energy:
             self.energy -= cost
         self.score += 1
@@ -204,7 +237,7 @@ class World:
 
     def _spawn_comets(self, dt, t):
         targets = [i for i, b in enumerate(self.bodies)
-                   if b.alive and b.special != "sun"]
+                   if b.alive and b.special not in ("sun", "star")]
         if not targets:
             return
         self._comet_timer -= dt
@@ -249,7 +282,7 @@ class World:
                 continue
             # Impact?
             for b in self.bodies:
-                if not b.alive or b.special == "sun":
+                if not b.alive or b.special in ("sun", "star"):
                     continue
                 bx, by, bz = body_world_pos(b, t)
                 if (c.x - bx) ** 2 + (c.y - by) ** 2 + (c.z - bz) ** 2 < \

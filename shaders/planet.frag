@@ -8,20 +8,15 @@ uniform sampler2D tex;
 uniform sampler2D night_tex;
 uniform vec3 sun_pos;
 uniform vec3 cam_pos;
-uniform float emit;       // > 0  => self-luminous body (the Sun)
+uniform vec3 tint;        // per-body colour multiplier
+uniform float emit;       // additive self-illumination (stars, lava, comets)
 uniform int  is_earth;    // 1    => day/night, ocean specular, atmosphere
 uniform vec3 atmo_color;
 
 out vec4 frag_color;
 
 void main() {
-    vec3 base = texture(tex, v_uv).rgb;
-
-    // Sun (or any emitter): output bright HDR value so the bloom pass catches it.
-    if (emit > 0.0) {
-        frag_color = vec4(base * emit, 1.0);
-        return;
-    }
+    vec3 base = texture(tex, v_uv).rgb * tint;
 
     vec3 N = normalize(v_normal);
     vec3 L = normalize(sun_pos - v_pos);
@@ -49,5 +44,8 @@ void main() {
         color = base * (0.03 + 1.08 * diff);
     }
 
+    // Additive self-illumination: stars/comets glow regardless of the Sun,
+    // lava worlds get a faint hot glow.
+    color += base * emit;
     frag_color = vec4(color, 1.0);
 }

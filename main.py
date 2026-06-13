@@ -12,7 +12,11 @@ from world import World, BODY_TYPES
 
 WIDTH, HEIGHT = 1280, 720
 
-KIND_KEYS = {pygame.K_1: "moon", pygame.K_2: "rocky", pygame.K_3: "terran", pygame.K_4: "gas"}
+KIND_KEYS = {
+    pygame.K_1: "moon", pygame.K_2: "rocky", pygame.K_3: "ocean", pygame.K_4: "desert",
+    pygame.K_5: "lava", pygame.K_6: "ice", pygame.K_7: "gas", pygame.K_8: "star",
+}
+HOTBAR = list(BODY_TYPES.keys())
 MODE_SPEED = {"explore": 1.0, "creative": 0.10, "survival": 0.10}
 CLICK_PIXELS = 6  # mouse travel under this on a press+release counts as a click
 
@@ -54,6 +58,7 @@ def main():
     speed = MODE_SPEED[world.mode]
     running = True            # sim running (not paused)
     selected = "rocky"
+    show_help = True
     dragging = False
     moved = 0.0
     down_pos = (0, 0)
@@ -87,6 +92,8 @@ def main():
                     set_mode("survival")
                 elif event.key in KIND_KEYS:
                     selected = KIND_KEYS[event.key]
+                elif event.key == pygame.K_h:
+                    show_help = not show_help
                 elif event.key in (pygame.K_EQUALS, pygame.K_PLUS):
                     speed = min(speed * 2.0, 64.0)
                 elif event.key == pygame.K_MINUS:
@@ -126,7 +133,8 @@ def main():
 
         preview = build_preview(camera, world, selected, dragging)
         renderer.render(world, camera, sim_time, preview)
-        draw_hud(hud, world, selected, speed, running)
+        draw_hud(hud, world, selected, speed, running, preview,
+                 pygame.mouse.get_pos(), show_help)
         pygame.display.flip()
 
 
@@ -153,48 +161,130 @@ def build_preview(camera, world, selected, dragging):
     dist = float(math.hypot(hit[0], hit[2]))
     if dist > 105.0:
         return None
-    _disp, _tex, radius, _spec, cost = BODY_TYPES[selected]
-    ok = (world.infinite_energy or world.energy >= cost) and dist >= 6.0
-    return {"x": float(hit[0]), "z": float(hit[2]), "dist": dist, "radius": radius, "ok": ok}
+    spec = BODY_TYPES[selected]
+    ok = (world.infinite_energy or world.energy >= spec["cost"]) and dist >= 6.0
+    return {"x": float(hit[0]), "z": float(hit[2]), "dist": dist,
+            "radius": spec["radius"], "ok": ok}
 
 
-def draw_hud(hud, world, selected, speed, running):
+def draw_hud(hud, world, selected, speed, running, preview, mouse, show_help):
     hud.begin()
-    # Status panel.
-    hud.panel(12, 12, 320, 104)
-    hud.text(24, 18, f"Mode: {world.mode.title()}", 24, (180, 220, 255))
+    W, H = hud.width, hud.height
+
+    _draw_mode_badges(hud, world, W)
+    _draw_status_card(hud, world, running, speed)
+    if world.mode in ("creative", "survival"):
+        _draw_hotbar(hud, world, selected, W, H)
+        _draw_tooltip(hud, world, selected, preview, mouse)
+
+    # Centre message (e.g. "Comet deflected", "Mars destroyed!").
+    if world.message_t > 0.0 and world.message:
+        hud.text_center(W // 2, H // 2 - 80, world.message, 30, (255, 175, 150))
+
+    hud.text(14, H - 24, "H: toggle help", 16, (150, 160, 175))
+    if show_help:
+        _draw_help(hud, world, W, H)
+    hud.end()
+
+
+def _draw_mode_badges(hud, world, W):
+    badges = [("Explore", "explore"), ("Creative", "creative"), ("Survival", "survival")]
+    bw, bh, gap = 132, 30, 8
+    total = len(badges) * bw + (len(badges) - 1) * gap
+    x = (W - total) // 2
+    for i, (label, mode) in enumerate(badges):
+        active = world.mode == mode
+        fill = (0.20, 0.42, 0.78, 0.92) if active else (0.06, 0.08, 0.14, 0.72)
+        border = (0.6, 0.8, 1.0, 0.9) if active else (0.3, 0.34, 0.5, 0.5)
+        hud.border_panel(x, 10, bw, bh, fill, border, 2)
+        col = (255, 255, 255) if active else (165, 175, 195)
+        hud.text_center(x + bw // 2, 16, f"F{i+1}  {label}", 18, col)
+        x += bw + gap
+
+
+def _draw_status_card(hud, world, running, speed):
+    hud.border_panel(14, 52, 300, 104)
+    hud.text(28, 58, world.mode.title() + " mode", 22, (185, 220, 255))
     if world.infinite_energy:
-        hud.text(24, 50, "Energy: Unlimited", 22, (255, 230, 140))
+        hud.text(28, 90, "Energy: Unlimited", 20, (255, 228, 140))
     else:
-        hud.text(24, 50, f"Energy: {world.energy:.0f}  (+{world.energy_rate():.1f}/s)", 22, (255, 230, 140))
+        hud.text(28, 86, f"Energy {world.energy:.0f}    +{world.energy_rate():.1f}/s",
+                 17, (255, 228, 140))
+        cap = 1500.0
+        frac = max(0.0, min(1.0, world.energy / cap))
+        hud.panel(28, 108, 272, 9, (0.10, 0.10, 0.14, 0.85))
+        hud.panel(28, 108, int(272 * frac), 9, (1.0, 0.80, 0.25, 0.95))
     extra = f"Planets: {len(world.planets())}"
     if world.threats_enabled:
-        extra += f"   Comets: {len(world.comets)}"
-    hud.text(24, 80, extra, 20, (200, 200, 210))
+        extra += f"    Comets: {len(world.comets)}"
+    state = "Running" if running else "PAUSED"
+    hud.text(28, 128, f"{extra}    {state}  x{speed:.2f}", 16, (190, 195, 210))
 
-    # Build palette (hidden in Explore).
-    if world.mode in ("creative", "survival"):
-        x = 12
-        y = 128
-        for key, kind in (("1", "moon"), ("2", "rocky"), ("3", "terran"), ("4", "gas")):
-            disp, _t, _r, _s, cost = BODY_TYPES[kind]
-            label = f"[{key}] {disp} ({int(cost)})"
-            col = (120, 255, 180) if kind == selected else (170, 175, 185)
-            w, _h = hud.text(x, y, label, 20, col)
-            x += w + 18
 
-    # Centre message.
-    if world.message_t > 0.0 and world.message:
-        w, _h = hud.measure(world.message, 30)
-        hud.text((hud.width - w) // 2, hud.height // 2 - 60, world.message, 30, (255, 180, 160))
+def _draw_hotbar(hud, world, selected, W, H):
+    slot, gap = 58, 8
+    n = len(HOTBAR)
+    total = n * slot + (n - 1) * gap
+    x0 = (W - total) // 2
+    y = H - slot - 36
+    for i, kind in enumerate(HOTBAR):
+        spec = BODY_TYPES[kind]
+        x = x0 + i * (slot + gap)
+        sel = kind == selected
+        border = (1.0, 0.95, 0.5, 1.0) if sel else (0.3, 0.34, 0.5, 0.6)
+        hud.border_panel(x, y, slot, slot, (0.05, 0.06, 0.10, 0.82), border, 3 if sel else 2)
+        sw = spec["swatch"]
+        hud.panel(x + 8, y + 8, slot - 16, slot - 26, (sw[0], sw[1], sw[2], 1.0))
+        hud.text(x + 5, y + 3, str(i + 1), 15, (255, 255, 255))
+        hud.text_center(x + slot // 2, y + slot - 17, spec["name"], 13, (210, 215, 225))
+        if not world.infinite_energy:
+            hud.text_center(x + slot // 2, y + slot - 2, str(int(spec["cost"])), 12, (255, 220, 150))
 
-    # Controls hint.
-    state = "running" if running else "PAUSED"
-    hint = ("F1 Explore  F2 Creative  F3 Survival   |   "
-            "Click: place / deflect   Drag: orbit   Scroll: zoom   "
-            f"Space: {state}   +/-: speed x{speed:.2f}")
-    hud.text(14, hud.height - 26, hint, 16, (150, 160, 175))
-    hud.end()
+
+def _draw_tooltip(hud, world, selected, preview, mouse):
+    if preview is None:
+        return
+    spec = BODY_TYPES[selected]
+    ok = preview["ok"]
+    label = spec["name"] if world.infinite_energy else f"{spec['name']}  ({int(spec['cost'])})"
+    if not ok:
+        label = "Can't place here"
+    tw, th = hud.measure(label, 16)
+    mx, my = mouse
+    px, py = mx + 16, my + 16
+    hud.border_panel(px, py, tw + 16, th + 10,
+                     (0.05, 0.07, 0.11, 0.9),
+                     (0.4, 0.9, 0.6, 0.8) if ok else (0.9, 0.4, 0.4, 0.8), 1)
+    hud.text(px + 8, py + 5, label, 16, (190, 255, 210) if ok else (255, 190, 190))
+
+
+def _draw_help(hud, world, W, H):
+    lines = [
+        "STELLAR — a solar system sandbox",
+        "",
+        "F1  Explore    fly around the real solar system",
+        "F2  Creative   unlimited energy, build anything",
+        "F3  Survival   earn energy, expand, defend from comets",
+        "",
+        "1-8        pick what to build (see the bar at the bottom)",
+        "Click      place it on an orbit  /  click a comet to deflect it",
+        "Drag       rotate the view        Scroll  zoom",
+        "+ / -      change speed           Space   pause",
+        "R          reset camera           Esc     quit",
+        "",
+        "Tip: in Survival, planets near the Sun's habitable zone earn the",
+        "most energy. Watch for comets and click them before they hit!",
+        "",
+        "Press H to close",
+    ]
+    pw, ph = 620, 26 * len(lines) + 36
+    px, py = (W - pw) // 2, (H - ph) // 2
+    hud.border_panel(px, py, pw, ph, (0.03, 0.04, 0.08, 0.92), (0.5, 0.6, 0.9, 0.8), 3)
+    for i, line in enumerate(lines):
+        if i == 0:
+            hud.text_center(W // 2, py + 18 + i * 26, line, 22, (255, 230, 150))
+        else:
+            hud.text(px + 30, py + 18 + i * 26, line, 17, (205, 212, 228))
 
 
 if __name__ == "__main__":

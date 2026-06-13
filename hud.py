@@ -87,6 +87,15 @@ class Hud:
     def panel(self, px, py, w, h, color=(0.0, 0.0, 0.0, 0.45)):
         self._draw(px, py, w, h, self.white, color)
 
+    def border_panel(self, px, py, w, h, fill=(0.04, 0.05, 0.09, 0.72),
+                     border=(0.45, 0.55, 0.85, 0.55), bw=2):
+        self.panel(px - bw, py - bw, w + 2 * bw, h + 2 * bw, border)
+        self.panel(px, py, w, h, fill)
+
+    def text_center(self, cx, py, string, size=20, color=(255, 255, 255)):
+        w, _h = self.measure(string, size)
+        return self.text(int(cx - w / 2), py, string, size, color)
+
     def text(self, px, py, string, size=20, color=(255, 255, 255)):
         if not string:
             return (0, 0)

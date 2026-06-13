@@ -49,6 +49,7 @@ class SolarSystem:
         self.prog_ring   = self.ctx.program(src("planet.vert"), src("ring.frag"))
         self.prog_line   = self.ctx.program(src("line.vert"), src("line.frag"))
         self.prog_sky    = self.ctx.program(src("skybox.vert"), src("skybox.frag"))
+        self.prog_galaxy = self.ctx.program(src("galaxy.vert"), src("galaxy.frag"))
         self.prog_bright = self.ctx.program(src("fsquad.vert"), src("brightpass.frag"))
         self.prog_blur   = self.ctx.program(src("fsquad.vert"), src("blur.frag"))
         self.prog_comp   = self.ctx.program(src("fsquad.vert"), src("composite.frag"))
@@ -82,6 +83,55 @@ class SolarSystem:
         self.quad_bright = self.ctx.vertex_array(self.prog_bright, [(quad, "2f", "in_position")])
         self.quad_blur   = self.ctx.vertex_array(self.prog_blur, [(quad, "2f", "in_position")])
         self.quad_comp   = self.ctx.vertex_array(self.prog_comp, [(quad, "2f", "in_position")])
+
+        self._build_galaxies()
+
+    def _build_galaxies(self):
+        from sprites import generate_galaxy
+        kinds = ["spiral", "elliptical", "irregular"]
+        palette = [(0.55, 0.65, 1.00), (0.90, 0.60, 1.00), (0.50, 0.92, 0.90),
+                   (1.00, 0.80, 0.55), (1.00, 0.60, 0.72), (0.80, 0.85, 1.00)]
+        rng = np.random.default_rng(7)
+
+        textures = []
+        for i, k in enumerate(kinds):
+            data = generate_galaxy(256, seed=i + 1, kind=k)
+            tex = self.ctx.texture((256, 256), 4, data.tobytes())
+            tex.build_mipmaps()
+            tex.filter = (moderngl.LINEAR_MIPMAP_LINEAR, moderngl.LINEAR)
+            textures.append(tex)
+
+        groups = {i: [] for i in range(len(kinds))}
+        for _ in range(16):
+            v = rng.normal(size=3)
+            v /= np.linalg.norm(v)
+            center = v * 720.0
+            n = -v
+            up = np.array([0.0, 1.0, 0.0]) if abs(n[1]) < 0.9 else np.array([1.0, 0.0, 0.0])
+            uax = np.cross(up, n); uax /= np.linalg.norm(uax)
+            vax = np.cross(n, uax)
+            roll = rng.uniform(0.0, 2.0 * np.pi)
+            ca, sa = np.cos(roll), np.sin(roll)
+            u2 = uax * ca + vax * sa
+            v2 = -uax * sa + vax * ca
+            s = rng.uniform(55.0, 150.0)
+            col = palette[int(rng.integers(len(palette)))]
+            ti = int(rng.integers(len(kinds)))
+            p0, p1 = center - u2 * s - v2 * s, center + u2 * s - v2 * s
+            p2, p3 = center - u2 * s + v2 * s, center + u2 * s + v2 * s
+            for pp, uv in [(p0, (0, 0)), (p1, (1, 0)), (p2, (0, 1)),
+                           (p2, (0, 1)), (p1, (1, 0)), (p3, (1, 1))]:
+                groups[ti] += [pp[0], pp[1], pp[2], uv[0], uv[1], col[0], col[1], col[2]]
+
+        self.galaxies = []
+        for ti, verts in groups.items():
+            if not verts:
+                continue
+            vbo = self.ctx.buffer(np.array(verts, dtype="f4").tobytes())
+            vao = self.ctx.vertex_array(
+                self.prog_galaxy, [(vbo, "3f 2f 3f", "in_pos", "in_uv", "in_color")]
+            )
+            self.galaxies.append((textures[ti], vao))
 
     # ── textures ─────────────────────────────────────────────────────────────
     def _load(self, name, alpha=False):
@@ -158,6 +208,17 @@ class SolarSystem:
         self.prog_sky["tex"].value = 0
         self._get_tex("8k_stars_milky_way.jpg").use(0)
         self.sphere_sky.render()
+
+        # Distant galaxies — additive billboards on the sky.
+        ctx.blend_func = moderngl.ONE, moderngl.ONE
+        self.prog_galaxy["view"].write(view)
+        self.prog_galaxy["proj"].write(proj)
+        self.prog_galaxy["tex"].value = 0
+        for tex, vao in self.galaxies:
+            tex.use(0)
+            vao.render(moderngl.TRIANGLES)
+        ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
+
         ctx.depth_mask = True
         ctx.enable(moderngl.DEPTH_TEST)
 
@@ -195,7 +256,8 @@ class SolarSystem:
                 continue
             pos = np.array(body_world_pos(b, time), dtype="f4")
             p["model"].write(self._body_model(pos, b.radius, b.tilt, time, b.period))
-            p["emit"].value = 6.0 if b.special == "sun" else 0.0
+            p["tint"].value = tuple(b.tint)
+            p["emit"].value = 6.0 if b.special == "sun" else float(b.emit)
             p["is_earth"].value = 1 if b.special == "earth" else 0
             self._get_tex(b.texture).use(0)
             if b.special == "earth":
@@ -209,6 +271,7 @@ class SolarSystem:
         for c in world.comets:
             pos = np.array([c.x, c.y, c.z], dtype="f4")
             p["model"].write(self._body_model(pos, 0.32, 0.0, time, 0.05))
+            p["tint"].value = (1.0, 0.85, 0.7)
             p["emit"].value = 2.2
             p["is_earth"].value = 0
             self._get_tex("2k_moon.jpg").use(0)
@@ -218,6 +281,7 @@ class SolarSystem:
         if preview is not None:
             pos = np.array([preview["x"], 0.0, preview["z"]], dtype="f4")
             p["model"].write(self._body_model(pos, preview["radius"], 0.0, time, 0.2))
+            p["tint"].value = (0.6, 1.0, 0.8) if preview["ok"] else (1.0, 0.5, 0.5)
             p["emit"].value = 1.1 if preview["ok"] else 0.4
             p["is_earth"].value = 0
             self._get_tex("2k_moon.jpg").use(0)
@@ -228,6 +292,7 @@ class SolarSystem:
             ang = 2.0 * math.pi * time * ORBIT_SPEED / MOON_PERIOD
             moon = pos + np.array([MOON_DIST * math.cos(ang), 0.0, MOON_DIST * math.sin(ang)], dtype="f4")
             p["model"].write(self._body_model(moon, MOON_RADIUS, 6.7, time, MOON_PERIOD))
+            p["tint"].value = (1.0, 1.0, 1.0)
             p["emit"].value = 0.0
             p["is_earth"].value = 0
             self._get_tex("2k_moon.jpg").use(0)
