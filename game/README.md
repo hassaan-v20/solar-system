@@ -54,13 +54,15 @@ needs art assets.
 ## The loop (M4)
 
 **Title → Station Hub → Raid → back to Station.** The title is a live 3D space
-scene (nebula, suns, a turning hero ship, drifting rocks) with a game menu. In the
-**station hub** you spend **credits** on ship **upgrades** (hull, shield, laser,
-engine, missile rack), pick a **contract**, and launch. Completing the raid pays
-out credits (a quarter on failure); your **credits, upgrades and stats persist**
-between sessions (`user://profile.cfg`). The whole game shares one **extreme**
-space look: nebula sky, three suns, heavy bloom, SSAO/SSIL/SSR, volumetric haze,
-colour grading, and TAA + 4× MSAA.
+scene (nebula, suns, a turning hero ship, drifting rocks) with a game menu. The
+**station hub is a place you fly around** (Roundtable-Hold style): visit the
+**Contract Board**, **Ship Bay**, **Armory**, and **Launch Pad** kiosks — fly up
+to one and press **F** to open it. Spend **credits** on ship **upgrades** (hull,
+shield, laser, engine, missile rack), pick a **contract**, and launch. Completing
+the raid pays out credits (a quarter on failure); your **credits, upgrades and
+stats persist** between sessions (`user://profile.cfg`). The whole game shares one
+**extreme** space look — nebula sky, three suns, heavy bloom, SSAO/SSIL/SSR,
+volumetric haze, colour grading, TAA + 4× MSAA — and a sci-fi **Orbitron** UI font.
 
 ## Run it
 

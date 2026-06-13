@@ -20,6 +20,10 @@ GameState="*res://scripts/core/game_state.gd"
 window/size/viewport_width=1600
 window/size/viewport_height=900
 
+[gui]
+
+theme/custom_font="res://assets/fonts/Orbitron.ttf"
+
 [rendering]
 
 environment/defaults/default_clear_color=Color(0.015, 0.02, 0.04, 1)
