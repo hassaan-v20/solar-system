@@ -40,3 +40,8 @@ def create_orbit_circle(radius, segments=256):
         angle = i * 2.0 * math.pi / segments
         verts += [radius * math.cos(angle), 0.0, radius * math.sin(angle)]
     return np.array(verts, dtype="f4")
+
+
+def create_fullscreen_quad():
+    # Triangle strip covering clip space [-1, 1].
+    return np.array([-1, -1, 1, -1, -1, 1, 1, 1], dtype="f4")

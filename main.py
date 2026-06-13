@@ -18,6 +18,7 @@ def main():
 
     camera = Camera(WIDTH, HEIGHT)
     solar_system = SolarSystem(ctx)
+    solar_system.resize(WIDTH, HEIGHT)
 
     clock  = pygame.time.Clock()
     time   = 0.0
@@ -64,8 +65,8 @@ def main():
                     last_pos = event.pos
             elif event.type == pygame.VIDEORESIZE:
                 camera.resize(event.w, event.h)
+                solar_system.resize(event.w, event.h)
 
-        ctx.clear(0.008, 0.008, 0.022)
         solar_system.render(camera, time)
         pygame.display.flip()
 
