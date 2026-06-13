@@ -15,9 +15,10 @@ PLAYER_SPEED  = 11.0
 PLAYER_MAX_HP = 100.0
 GRAVITY       = 22.0
 JUMP_V        = 8.5
-CREATURE_CAP  = 14
-SPAWN_GAP     = 2.0
-AGGRO         = 36.0
+CREATURE_CAP  = 16
+SPAWN_GAP     = 1.6
+AGGRO         = 38.0
+DAY_LEN       = 80.0      # seconds for a full day/night cycle
 
 # weapon key -> stats.  range >10 counts as ranged (narrower aim).
 WEAPONS = {
@@ -102,6 +103,7 @@ class Surface:
         self.loot = []
         self.sky = []          # celestial bodies visible overhead: {dir, color, size}
         self.terrain = None    # set by main on landing (height lookups)
+        self._was_night = False
         self.kills = 0
         self.dead = False
         self.spawn_t = 1.0
@@ -112,6 +114,15 @@ class Surface:
     @property
     def bound(self):
         return self.terrain.extent - 8.0 if self.terrain else PLAY_RADIUS
+
+    @property
+    def daylight(self):
+        # 1 = noon, 0 = midnight.
+        return 0.5 + 0.5 * math.cos((self.time / DAY_LEN) * 2.0 * math.pi)
+
+    @property
+    def is_night(self):
+        return self.daylight < 0.32
 
     def jump(self):
         if not self.dead and self.air <= 0.01:
@@ -151,8 +162,18 @@ class Surface:
         if self.message_t > 0:
             self.message_t -= dt
 
+        # Monsters only come out at night (Minecraft-style).
+        night = self.is_night
+        if night and not self._was_night:
+            self.notify("Night falls — creatures emerge!", 3.0)
+        if not night and self._was_night:
+            # Dawn: creatures away from the player flee into the light.
+            self.creatures = [c for c in self.creatures
+                              if math.hypot(self.x - c.x, self.z - c.z) < 14.0]
+        self._was_night = night
+
         self.spawn_t -= dt
-        if self.spawn_t <= 0 and sum(c.alive for c in self.creatures) < CREATURE_CAP:
+        if night and self.spawn_t <= 0 and sum(c.alive for c in self.creatures) < CREATURE_CAP:
             self.spawn_t = SPAWN_GAP
             self._spawn()
 

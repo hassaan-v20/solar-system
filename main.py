@@ -15,6 +15,7 @@ from netclient import NetClient
 from surface import Surface, RECIPE_ORDER, RECIPE_LABEL, RECIPES, WEAPONS, ARMORS, ITEM_ORDER, ITEM_COLOR, PLAYER_MAX_HP
 from surface_scene import SurfaceRenderer, THEME as SURF_THEME
 from terrain import Terrain
+from profile import load_profile, save_profile, OBJECTIVES
 
 LOOK_SENS = 0.0026
 
@@ -234,6 +235,23 @@ def main():
     join_focus = 0          # 0 = address field, 1 = password field
     surf = None
     surf_renderer = None
+    prof = load_profile()
+    toasts = []
+    last_kills = 0
+    last_inv = {}
+
+    def push_toasts(events):
+        for e in events:
+            if e["kind"] == "objective":
+                toasts.append({"text": f"Objective complete:  {e['text']}   (+{e['xp']} XP)",
+                               "col": (150, 255, 180), "t": 4.5})
+            else:
+                u = f"   ·   unlocked {e['unlocked']}" if e.get("unlocked") else ""
+                toasts.append({"text": f"LEVEL {e['level']}!{u}", "col": (255, 225, 130), "t": 5.0})
+
+    def award(metric, n=1, snapshot=None):
+        push_toasts(prof.record(metric, n, snapshot))
+        save_profile(prof)
     dragging = False
     moved = 0.0
     down_pos = last_pos = (0, 0)
@@ -247,7 +265,7 @@ def main():
         state = "title"
 
     def land_on(b):
-        nonlocal surf, surf_renderer, state
+        nonlocal surf, surf_renderer, state, last_kills, last_inv
         kind = planet_kind_from_body(b)
         amp = SURF_THEME.get(kind, SURF_THEME["rocky"])[3]
         surf = Surface(kind)
@@ -258,11 +276,17 @@ def main():
         pygame.event.set_grab(True)
         pygame.mouse.set_visible(False)
         pygame.mouse.get_rel()
+        last_kills = 0
+        last_inv = {}
         state = "surface"
+        award("lands")
 
     while True:
         dt = clock.tick(60) / 1000.0
         mouse = pygame.mouse.get_pos()
+        for to in toasts:
+            to["t"] -= dt
+        toasts[:] = [to for to in toasts if to["t"] > 0]
 
         if state == "playing":
             if net is not None:                      # multiplayer: state comes from server
@@ -286,6 +310,14 @@ def main():
             strafe = (1 if keys[pygame.K_d] else 0) - (1 if keys[pygame.K_a] else 0)
             crouch = keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL]
             surf.update(dt, fwd, strafe, crouch)
+            if surf.kills > last_kills:
+                award("kills", surf.kills - last_kills)
+                last_kills = surf.kills
+            for _it, _cnt in surf.inv.items():
+                _d = _cnt - last_inv.get(_it, 0)
+                if _d > 0:
+                    award("mat_" + _it, _d)
+            last_inv = dict(surf.inv)
         else:
             title_time += dt * 0.3
             camera.yaw += dt * 3.0
@@ -345,8 +377,8 @@ def main():
                         surf.jump()
                     elif event.key in (pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5):
                         idx = [pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5].index(event.key)
-                        if idx < len(RECIPE_ORDER):
-                            surf.craft(RECIPE_ORDER[idx])
+                        if idx < len(RECIPE_ORDER) and surf.craft(RECIPE_ORDER[idx]):
+                            award("crafted_" + RECIPE_ORDER[idx])
                     continue
 
                 if event.key == pygame.K_F11:
@@ -443,7 +475,7 @@ def main():
                                     break
                         elif state == "playing":
                             selected = handle_play_click(camera, world, event.pos, selected,
-                                                         sim_time, W, H, net)
+                                                         sim_time, W, H, net, prof, award)
 
             elif event.type == pygame.MOUSEMOTION:
                 if state == "surface":
@@ -476,16 +508,16 @@ def main():
                         if sp and 0 <= sp[0] <= W and 0 <= sp[1] <= H:
                             avatar_labels.append((sp[0], sp[1], pl.get("name", ""),
                                                   tuple(int(c * 255) for c in col)))
-            preview = build_preview(camera, world, selected, dragging)
+            preview = build_preview(camera, world, selected, dragging, prof)
             renderer.render(world, camera, sim_time, preview, avatars)
             draw_hud(hud, world, selected, speed, running, preview, mouse, show_help,
-                     net, players, avatar_labels)
+                     net, players, avatar_labels, prof, toasts)
         elif state == "land_menu":
             renderer.render(world, camera, sim_time, None)
             draw_land_menu(hud, world, W, H, mouse)
         elif state == "surface":
             surf_renderer.render(surf, W, H)
-            draw_surface_hud(hud, surf, W, H, surf_renderer)
+            draw_surface_hud(hud, surf, W, H, surf_renderer, prof, toasts)
         elif state == "join":
             renderer.render(World("explore"), camera, title_time, None)
             draw_join(hud, W, H, join_text, join_pw, join_focus)
@@ -494,11 +526,11 @@ def main():
             draw_host(hud, W, H, host_pw)
         else:
             renderer.render(world, camera, title_time, None)
-            draw_title(hud, W, H, has_save(), mouse)
+            draw_title(hud, W, H, has_save(), mouse, prof)
         pygame.display.flip()
 
 
-def handle_play_click(camera, world, pos, selected, sim_time, W, H, net):
+def handle_play_click(camera, world, pos, selected, sim_time, W, H, net, prof, award):
     for rect, _lbl, mode in mode_badge_rects(W):
         if point_in(rect, pos):
             if mode != world.mode:
@@ -518,29 +550,36 @@ def handle_play_click(camera, world, pos, selected, sim_time, W, H, net):
     eid = pick_entity(camera, world, pos, sim_time)
     if eid is not None:
         cmd = {"type": "harvest", "eid": eid}
-        net.send_cmd(cmd) if net is not None else world.apply(cmd)
+        if net is not None:
+            net.send_cmd(cmd); award("harvested")
+        elif world.apply(cmd):
+            award("harvested")
         return selected
     if world.threats_enabled:
         cid = pick_comet(camera, world, pos)
         if cid is not None:
             if net is not None:
-                net.send_cmd({"type": "deflect", "cid": cid})
-            else:
-                world.deflect(cid); world.notify("Comet deflected")
+                net.send_cmd({"type": "deflect", "cid": cid}); award("deflects")
+            elif world.deflect(cid):
+                world.notify("Comet deflected"); award("deflects")
             return selected
     if world.mode in ("creative", "survival"):
+        if world.mode == "survival" and not prof.unlocked(selected):
+            world.notify(f"{BODY_TYPES[selected]['name']} unlocks at level {prof.unlock_level(selected)}")
+            return selected
         hit = camera.ground_hit(*pos)
         if hit is not None:
             cmd = {"type": "place", "body": selected, "x": float(hit[0]),
                    "z": float(hit[2]), "t": sim_time}
             if net is not None:
-                net.send_cmd(cmd)
-            else:
-                world.apply(cmd)
+                net.send_cmd(cmd); award("placed", snapshot=len(world.planets()) + 1)
+            elif world.apply(cmd):
+                award("placed")
+                award("max_planets", snapshot=len(world.planets()))
     return selected
 
 
-def build_preview(camera, world, selected, dragging):
+def build_preview(camera, world, selected, dragging, prof=None):
     if dragging or world.mode not in ("creative", "survival"):
         return None
     hit = camera.ground_hit(*pygame.mouse.get_pos())
@@ -550,17 +589,24 @@ def build_preview(camera, world, selected, dragging):
     if dist > 105.0:
         return None
     spec = BODY_TYPES[selected]
-    ok = (world.infinite_energy or world.energy >= spec["cost"]) and dist >= 6.0
+    locked = world.mode == "survival" and prof is not None and not prof.unlocked(selected)
+    ok = (world.infinite_energy or world.energy >= spec["cost"]) and dist >= 6.0 and not locked
     return {"x": float(hit[0]), "z": float(hit[2]), "dist": dist,
             "radius": spec["radius"], "ok": ok}
 
 
 # ── title / join screens ───────────────────────────────────────────────────────
-def draw_title(hud, W, H, save_exists, mouse):
+def draw_title(hud, W, H, save_exists, mouse, prof=None):
     hud.begin()
     hud.panel(0, 0, W, H, (0.0, 0.0, 0.0, 0.45))
     hud.text_center(W // 2, H // 2 - 245, "STELLAR", 80, (255, 235, 175), "title")
     hud.text_center(W // 2, H // 2 - 152, "A SOLAR SYSTEM SANDBOX", 18, (165, 200, 245), "ui")
+    if prof is not None:
+        done = len(prof.done)
+        total = len(OBJECTIVES)
+        hud.text_center(W // 2, H // 2 - 124,
+                        f"Level {prof.level}   ·   {prof.xp} XP   ·   {done}/{total} objectives",
+                        16, (150, 230, 180), "body")
     for rect, action, label, enabled in title_button_rects(W, H, save_exists):
         _draw_button(hud, rect, label, enabled and point_in(rect, mouse), enabled)
     hud.text_center(W // 2, H - 38, "Click an option  ·  F11 fullscreen  ·  Esc quit", 16,
@@ -622,25 +668,53 @@ def _draw_button(hud, rect, label, hover, enabled):
 
 # ── in-game HUD ────────────────────────────────────────────────────────────────
 def draw_hud(hud, world, selected, speed, running, preview, mouse, show_help, net, players,
-             avatar_labels=None):
+             avatar_labels=None, prof=None, toasts=None):
     hud.begin()
     W, H = hud.width, hud.height
     _draw_mode_badges(hud, world, W, mouse)
     _draw_status_card(hud, world, running, speed)
     if net is not None:
         _draw_coop(hud, W, net, players)
+    if prof is not None:
+        _draw_progress(hud, prof, W, 96 if net is not None else 54)
     for sx, sy, name, col in (avatar_labels or []):
         hud.text(int(sx) + 12, int(sy) - 10, name, 14, col, "ui")
     if world.mode in ("creative", "survival"):
-        _draw_hotbar(hud, world, selected, W, H, mouse)
+        _draw_hotbar(hud, world, selected, W, H, mouse, prof)
         _draw_tooltip(hud, world, selected, preview, mouse)
     if world.message_t > 0.0 and world.message:
         hud.text_center(W // 2, H // 2 - 90, world.message, 30, (255, 175, 150), "ui")
     hud.text(14, H - 24, "H: help    ·    L: land on a planet    ·    Esc: menu",
              15, (150, 160, 175), "body")
+    _draw_toasts(hud, toasts or [], W)
     if show_help:
         _draw_help(hud, world, W, H)
     hud.end()
+
+
+def _draw_progress(hud, prof, W, y0):
+    pw = 312
+    x = W - pw - 14
+    objs = prof.active_objectives(3)
+    ph = 58 + 26 * len(objs)
+    hud.border_panel(x, y0, pw, ph, (0.04, 0.05, 0.10, 0.82), (0.45, 0.5, 0.75, 0.6), 2)
+    frac, have, need = prof.level_progress()
+    hud.text(x + 14, y0 + 8, f"LEVEL {prof.level}", 18, (255, 225, 130), "ui")
+    hud.text(x + pw - 96, y0 + 11, f"{have}/{need} XP", 13, (190, 200, 220), "body")
+    hud.panel(x + 14, y0 + 32, pw - 28, 8, (0.10, 0.10, 0.14, 0.9))
+    hud.panel(x + 14, y0 + 32, int((pw - 28) * frac), 8, (0.4, 0.7, 1.0, 0.95))
+    yy = y0 + 50
+    for o in objs:
+        hud.text(x + 14, yy, f"• {o['text']}", 13, (205, 212, 228), "body")
+        hud.text(x + pw - 70, yy, f"{o['have']}/{o['target']}", 12, (150, 230, 180), "body")
+        yy += 26
+
+
+def _draw_toasts(hud, toasts, W):
+    y = 150
+    for to in toasts[-4:]:
+        hud.text_center(W // 2, y, to["text"], 20, to["col"], "ui")
+        y += 30
 
 
 def _draw_coop(hud, W, net, players):
@@ -689,19 +763,24 @@ def _draw_status_card(hud, world, running, speed):
              15, (190, 195, 210), "body")
 
 
-def _draw_hotbar(hud, world, selected, W, H, mouse):
+def _draw_hotbar(hud, world, selected, W, H, mouse, prof=None):
+    locked_mode = world.mode == "survival" and prof is not None
     for (rect, kind) in hotbar_rects(W, H):
         x, y, w, h = rect
         spec = BODY_TYPES[kind]
         sel = kind == selected
         hover = point_in(rect, mouse)
+        locked = locked_mode and not prof.unlocked(kind)
         border = (1.0, 0.95, 0.5, 1.0) if sel else ((0.6, 0.7, 0.95, 0.8) if hover else (0.3, 0.34, 0.5, 0.6))
         hud.border_panel(x, y, w, h, (0.05, 0.06, 0.10, 0.82), border, 3 if sel else 2)
         sw = spec["swatch"]
-        hud.panel(x + 8, y + 8, w - 16, h - 28, (sw[0], sw[1], sw[2], 1.0))
+        dim = 0.35 if locked else 1.0
+        hud.panel(x + 8, y + 8, w - 16, h - 28, (sw[0] * dim, sw[1] * dim, sw[2] * dim, 1.0))
         hud.text(x + 5, y + 3, str((HOTBAR.index(kind) + 1) % 10), 14, (255, 255, 255), "ui")
+        if locked:
+            hud.text_center(x + w // 2, y + h - 30, f"Lv {prof.unlock_level(kind)}", 13, (255, 200, 150), "ui")
         hud.text_center(x + w // 2, y + h - 18, spec["name"], 12, (210, 215, 225), "ui")
-        if not world.infinite_energy:
+        if not world.infinite_energy and not locked:
             hud.text_center(x + w // 2, y + h - 3, str(int(spec["cost"])), 11, (255, 220, 150), "body")
 
 
@@ -769,7 +848,7 @@ def draw_land_menu(hud, world, W, H, mouse):
     hud.end()
 
 
-def draw_surface_hud(hud, surf, W, H, surf_renderer=None):
+def draw_surface_hud(hud, surf, W, H, surf_renderer=None, prof=None, toasts=None):
     hud.begin()
 
     cx, cy = W // 2, H // 2
@@ -778,8 +857,17 @@ def draw_surface_hud(hud, surf, W, H, surf_renderer=None):
     hud.panel(cx - 10, cy - 1, 20, 2, ch)
 
     hud.text(14, 12,
-             "WASD move  ·  Space jump  ·  Ctrl crouch  ·  mouse look  ·  click attack  ·  1-5 craft  ·  Esc leave",
+             "WASD move  ·  Space jump  ·  Ctrl crouch  ·  click attack  ·  1-5 craft  ·  Esc leave",
              15, (165, 175, 195), "body")
+
+    # Day / night indicator.
+    phase = "NIGHT" if surf.is_night else ("DAY" if surf.daylight > 0.6 else "DUSK")
+    pcol = (130, 160, 255) if surf.is_night else (255, 225, 150)
+    hud.border_panel(W - 164, 50, 150, 30, (0.05, 0.06, 0.10, 0.82), (0.3, 0.34, 0.5, 0.6), 2)
+    hud.text_center(W - 164 + 75, 56, phase, 16, pcol, "ui")
+    if prof is not None:
+        _draw_progress(hud, prof, W, 88)
+    _draw_toasts(hud, toasts or [], W)
 
     # Health card.
     hud.border_panel(14, H - 96, 320, 82)

@@ -46,9 +46,10 @@ sky**, in their real directions.
 - A big, roamable world with its own **rugged terrain** — large mountains,
   valleys and scattered rocks — lit by its Sun, with the rest of the solar
   system (colour-coded) up in the sky.
-- **Five alien species** (critter, alien, brute, stalker, flyer) that **wander,
-  then chase** when you get close, each with its own look and movement (the flyer
-  hovers!). Kill them for loot: **hide, bone, crystal, alloy**.
+- A **day/night cycle**: the world is safe by day, but at **night** five alien
+  species (critter, alien, brute, stalker, flyer) emerge — they **wander, then
+  chase** you, each lit and shaded with its own look and movement (the flyer
+  hovers!). Kill them for loot: **hide, bone, crystal, alloy**. They flee at dawn.
 - Your equipped **weapon is shown in first person** and swings when you attack.
 - **Craft** better gear with keys **1-5**: Alloy Blade, **Hunter's Bow** and
   Plasma Blaster (weapons), Hide and Plated Armour. Better weapons hit
@@ -57,6 +58,17 @@ sky**, in their real directions.
 
 Single-player for now (on-foot co-op is a future step). Terrain is heightmap-based
 — true caves/overhangs are a future addition.
+
+## Progress & objectives
+
+Everything you do builds one **persistent profile** (saved to `profile.json`):
+placing worlds, harvesting, deflecting comets, landing, gathering materials,
+killing monsters and crafting all grant **XP**. You **level up**, which **unlocks**
+new things to build (gas giants at Lv 2, stars at Lv 3 in Survival). A rolling
+list of **objectives** ("Defeat 10 creatures", "Grow a system to 12 worlds",
+"Craft the Plasma Blaster") gives you goals and bonus XP, shown with your level
+and XP bar in the HUD and on the title screen. This ties the space and surface
+halves into one game: gather on foot → build in space → level up → reach more.
 
 ## Run it
 
@@ -98,6 +110,7 @@ netclient.py   client networking (background thread + snapshots)
 surface.py     first-person surface mode: creatures, loot, crafting
 surface_scene.py  first-person renderer (terrain, sky, sprite creatures)
 terrain.py     procedural heightmap terrain (mountains / valleys)
+profile.py     persistent progression: XP, levels, objectives, unlocks
 hud.py         2D text/panel overlay (title, mode badges, hotbar, help)
 sprites.py     procedural galaxy / nebula sprite generation
 mesh.py        sphere / ring / quad geometry

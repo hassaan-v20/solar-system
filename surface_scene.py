@@ -42,7 +42,7 @@ class SurfaceRenderer:
         qvbo = ctx.buffer(q.tobytes())
         self.bb_vao = ctx.vertex_array(self.prog_bb, [(qvbo, "2f 2f", "in_corner", "in_uv")])
 
-        self.tex_creature = {var: self._sprite(generate_creature(var)) for var in range(5)}
+        self.tex_creature = {var: self._sprite(generate_creature(var, 192)) for var in range(5)}
         self.tex_orb = self._sprite(generate_orb(64))
         self.tex_rock = self._sprite(generate_rock(96))
         self.weapon_tex = {k: self._sprite(generate_weapon(k))
@@ -77,8 +77,12 @@ class SurfaceRenderer:
 
     def render(self, surf, width, height):
         ctx = self.ctx
-        gtex, tint, sky, _amp = THEME.get(surf.planet_kind, THEME["rocky"])
+        gtex, tint, base_sky, _amp = THEME.get(surf.planet_kind, THEME["rocky"])
         self._ensure_terrain(surf.terrain)
+
+        dl = surf.daylight                       # 1 day .. 0 night
+        night_sky = tuple(c * 0.16 + 0.02 for c in base_sky)
+        sky = tuple(night_sky[i] * (1 - dl) + base_sky[i] * dl for i in range(3))
 
         def gh(x, z):
             return surf.terrain.height(x, z) if surf.terrain else 0.0
@@ -97,7 +101,10 @@ class SurfaceRenderer:
         right = right / nrm if nrm > 1e-5 else np.array([1.0, 0.0, 0.0], dtype="f4")
 
         sun_dir = surf.sky[0]["dir"] if surf.sky else (0.4, 0.8, 0.3)
-        ambient = (sky[0] * 0.5 + 0.18, sky[1] * 0.5 + 0.18, sky[2] * 0.5 + 0.18)
+        day_amb = tuple(base_sky[i] * 0.5 + 0.18 for i in range(3))
+        night_amb = (0.07, 0.08, 0.14)
+        ambient = tuple(night_amb[i] * (1 - dl) + day_amb[i] * dl for i in range(3))
+        sun_col = tuple(c * (0.16 + 0.84 * dl) for c in (1.0, 0.95, 0.85))
 
         ctx.screen.use()
         ctx.clear(sky[0], sky[1], sky[2])
@@ -113,7 +120,7 @@ class SurfaceRenderer:
             g["sky"].value = tuple(sky)
             g["cam"].value = (float(surf.x), eye_y, float(surf.z))
             g["sun_dir"].value = tuple(float(v) for v in sun_dir)
-            g["sun_col"].value = (1.0, 0.95, 0.85)
+            g["sun_col"].value = sun_col
             g["ambient"].value = ambient
             gt = self.tex.get(gtex)
             if gt is not None:
@@ -130,15 +137,28 @@ class SurfaceRenderer:
         # Celestial bodies (Sun + planets) far in the sky.
         BIGR = 480.0
         self.tex_orb.use(0)
-        for sb in surf.sky:
-            dx, dy, dz = sb["dir"]
-            size = sb["size"]
+
+        def sky_quad(dx, dy, dz, size, color):
             self.prog_bb["center"].value = (float(surf.x) + dx * BIGR,
                                             eye_y + dy * BIGR - size * 0.5,
                                             float(surf.z) + dz * BIGR)
             self.prog_bb["size"].value = size
-            self.prog_bb["color"].value = tuple(sb["color"])
+            self.prog_bb["color"].value = color
             self.bb_vao.render(moderngl.TRIANGLE_STRIP)
+
+        for i, sb in enumerate(surf.sky):
+            dx, dy, dz = sb["dir"]
+            col = sb["color"]
+            if i == 0:                       # the Sun fades out at night
+                col = tuple(c * dl for c in col)
+                if dl < 0.05:
+                    continue
+            sky_quad(dx, dy, dz, sb["size"], tuple(col))
+
+        # Moon, rising as the Sun sets.
+        if dl < 0.7:
+            b = (1.0 - dl) * 0.95
+            sky_quad(0.35, 0.72, -0.45, 34.0, (b, b, b * 0.95))
 
         # Rocks.
         self.tex_rock.use(0)
