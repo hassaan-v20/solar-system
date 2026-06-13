@@ -19,9 +19,11 @@ Fly the **Wayfarer** and fight escalating waves in a dogfight that actually read
   glow, explosions, and **heal/shield pickups** dropped by enemies.
 - Ship damage (shields → hull, with regen), death/respawn, scoring.
 
-Visuals: ships are now **modelled from primitives** (fuselage, swept wings,
-cockpit, engines — not boxes), plus an infinite **starfield + nebula sky**, depth
-fog, and spinning asteroids.
+Visuals: the player ship is a **single rounded CSG hull** (smooth fuselage, nose,
+swept wings, tail, engine pods + glowing cockpit/nav lights) — a real modelled
+mesh, not stacked boxes — plus an infinite **starfield + nebula sky**, depth fog,
+and spinning asteroids. (Enemy craft are still primitive assemblies; drop-in
+`.glb` model packs are the next fidelity step.)
 
 ## In progress: Milestone 3 — the raid loop
 

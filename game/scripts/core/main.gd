@@ -219,23 +219,65 @@ func _build_ship() -> ShipController:
 	accent.metallic = 0.6
 	accent.roughness = 0.4
 
-	# Fuselage.
-	var fus := BoxMesh.new()
-	fus.size = Vector3(1.0, 0.55, 3.0)
-	_part(ship, fus, Vector3(0, 0, 0.1), Vector3.ZERO, hull)
-	# Tapered nose (prism pointing forward).
-	var nose := PrismMesh.new()
-	nose.size = Vector3(1.0, 0.55, 1.8)
-	_part(ship, nose, Vector3(0, 0, -2.3), Vector3(90, 0, 0), hull)
-	# Swept wings.
-	var wing := BoxMesh.new()
-	wing.size = Vector3(2.4, 0.12, 1.3)
-	_part(ship, wing, Vector3(-1.35, 0, 0.5), Vector3(0, -18, -6), hull)
-	_part(ship, wing, Vector3(1.35, 0, 0.5), Vector3(0, 18, 6), hull)
-	# Tail fin.
-	var fin := BoxMesh.new()
-	fin.size = Vector3(0.12, 1.0, 1.0)
-	_part(ship, fin, Vector3(0, 0.55, 1.4), Vector3(-18, 0, 0), hull)
+	# Hull: a single rounded CSG body (smooth fuselage + nose + wings + tail + pods),
+	# so the ship reads as a real modelled mesh rather than stacked boxes.
+	var comb := CSGCombiner3D.new()
+	var fus := CSGCylinder3D.new()
+	fus.radius = 0.55
+	fus.height = 3.0
+	fus.sides = 18
+	fus.smooth_faces = true
+	fus.rotation_degrees = Vector3(90, 0, 0)
+	fus.material = hull
+	comb.add_child(fus)
+	var nosecap := CSGSphere3D.new()
+	nosecap.radius = 0.55
+	nosecap.radial_segments = 18
+	nosecap.rings = 9
+	nosecap.smooth_faces = true
+	nosecap.scale = Vector3(0.85, 0.85, 2.6)
+	nosecap.position = Vector3(0, 0, -2.0)
+	nosecap.material = hull
+	comb.add_child(nosecap)
+	var tailcap := CSGSphere3D.new()
+	tailcap.radius = 0.55
+	tailcap.radial_segments = 16
+	tailcap.rings = 8
+	tailcap.smooth_faces = true
+	tailcap.scale = Vector3(1.0, 1.0, 1.3)
+	tailcap.position = Vector3(0, 0, 1.4)
+	tailcap.material = hull
+	comb.add_child(tailcap)
+	var wl := CSGBox3D.new()
+	wl.size = Vector3(2.7, 0.14, 1.3)
+	wl.position = Vector3(-1.4, 0, 0.5)
+	wl.rotation_degrees = Vector3(0, -18, -6)
+	wl.material = hull
+	comb.add_child(wl)
+	var wr := CSGBox3D.new()
+	wr.size = Vector3(2.7, 0.14, 1.3)
+	wr.position = Vector3(1.4, 0, 0.5)
+	wr.rotation_degrees = Vector3(0, 18, 6)
+	wr.material = hull
+	comb.add_child(wr)
+	var finbox := CSGBox3D.new()
+	finbox.size = Vector3(0.14, 1.0, 1.0)
+	finbox.position = Vector3(0, 0.55, 1.3)
+	finbox.rotation_degrees = Vector3(-18, 0, 0)
+	finbox.material = hull
+	comb.add_child(finbox)
+	for sx in [-0.62, 0.62]:
+		var pod := CSGCylinder3D.new()
+		pod.radius = 0.28
+		pod.height = 1.6
+		pod.sides = 14
+		pod.smooth_faces = true
+		pod.rotation_degrees = Vector3(90, 0, 0)
+		pod.position = Vector3(sx, 0, 1.4)
+		pod.material = accent
+		comb.add_child(pod)
+	ship.add_child(comb)
+
 	# Cockpit canopy (glowing accent).
 	var cockpit := BoxMesh.new()
 	cockpit.size = Vector3(0.5, 0.32, 1.1)
@@ -244,12 +286,7 @@ func _build_ship() -> ShipController:
 	cp_mat.emission_enabled = true
 	cp_mat.emission = Color(0.4, 0.8, 1.0)
 	cp_mat.emission_energy_multiplier = 2.0
-	_part(ship, cockpit, Vector3(0, 0.36, -0.7), Vector3.ZERO, cp_mat)
-	# Engine nacelles.
-	var nac := BoxMesh.new()
-	nac.size = Vector3(0.45, 0.45, 1.4)
-	_part(ship, nac, Vector3(-0.55, 0, 1.5), Vector3.ZERO, accent)
-	_part(ship, nac, Vector3(0.55, 0, 1.5), Vector3.ZERO, accent)
+	_part(ship, cockpit, Vector3(0, 0.4, -0.7), Vector3.ZERO, cp_mat)
 
 	# Detail: dark belly, dorsal antenna, under-wing hardpoints, wingtip nav lights.
 	var dark := StandardMaterial3D.new()
