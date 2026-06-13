@@ -17,3 +17,6 @@ signal objective_updated(text: String)
 signal extraction_timer_changed(seconds_left: float)
 signal docking_available(available: bool)
 signal cargo_changed(items: Array)
+
+# Economy / progression (Milestone 4)
+signal profile_changed

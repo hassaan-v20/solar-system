@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="UpgradeDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/upgrade_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+upgrade_id = "cargo_rack_1"
+display_name = "Cargo Rack I"
+description = "+2 cargo slots"
+cost = 200
+stat = "cargo_slots"
+mult = 1.0
+add = 2.0

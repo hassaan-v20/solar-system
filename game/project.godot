@@ -7,12 +7,13 @@ config_version=5
 
 config/name="Stellar"
 config/description="Co-op space raid extraction — Ghost Station vertical slice."
-run/main_scene="res://scenes/raid/ghost_station_raid.tscn"
+run/main_scene="res://scenes/station/station_hub.tscn"
 config/features=PackedStringArray("4.6", "Forward Plus")
 
 [autoload]
 
 EventBus="*res://scripts/core/event_bus.gd"
+PlayerProfile="*res://scripts/economy/player_profile.gd"
 
 [display]
 

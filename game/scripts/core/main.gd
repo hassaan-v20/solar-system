@@ -13,9 +13,15 @@ const LAYER_ENVIRONMENT := 1   # asteroids / debris
 const LAYER_PLAYER_SHIP := 2
 const LAYER_ENEMY := 4
 
+const RESULTS_SCENE := "res://scenes/station/results_screen.tscn"
+const RESULTS_DELAY := 2.5      # let the end-of-mission overlay / explosion read
+
 var _rng := RandomNumberGenerator.new()
 var _want_capture := true
 var _ship: ShipController
+var _mission_def: MissionDef
+var _drones_killed: int = 0
+var _run_finished: bool = false
 
 func _ready() -> void:
 	_rng.randomize()
@@ -31,12 +37,14 @@ func _ready() -> void:
 	_build_camera(_ship)
 	_build_hud(_ship)
 	_build_asteroids()
-	var mdef: MissionDef = load("res://data/missions/ghost_station.tres")
-	if mdef == null:
-		mdef = MissionDef.new()
-	var dock := _build_station(mdef.station_distance)
-	_build_mission(_ship, dock, mdef)
+	_mission_def = load("res://data/missions/ghost_station.tres")
+	if _mission_def == null:
+		_mission_def = MissionDef.new()
+	var dock := _build_station(_mission_def.station_distance)
+	_build_mission(_ship, dock, _mission_def)
 	EventBus.ship_destroyed.connect(_on_ship_destroyed)
+	EventBus.enemy_destroyed.connect(func() -> void: _drones_killed += 1)
+	EventBus.mission_state_changed.connect(_on_mission_state_changed)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("toggle_mouse"):
@@ -190,9 +198,11 @@ func _build_stars() -> void:
 func _build_ship() -> ShipController:
 	var ship := ShipController.new()
 	ship.name = "Wayfarer"
-	var def := load("res://data/ships/wayfarer.tres")
-	if def is ShipDef:
-		ship.ship_def = def
+	# Outfit the base hull with the player's owned upgrades (M4); base .tres is
+	# left untouched — UpgradeSystem returns a modified copy.
+	var base_def := load("res://data/ships/wayfarer.tres")
+	if base_def is ShipDef:
+		ship.ship_def = UpgradeSystem.outfit(base_def, PlayerProfile.owned_upgrades)
 
 	# Hull body (placeholder primitive)
 	var body := MeshInstance3D.new()
@@ -244,6 +254,9 @@ func _build_ship() -> ShipController:
 	ship.cargo = cargo
 
 	add_child(ship)
+	# Carry persisted damage into the run (repairing at the station restores it),
+	# but floor it so an unrepaired ship is never launched dead/unplayable.
+	ship.current_hull = ship.ship_def.hull_max * clampf(PlayerProfile.ship_hull_pct, 0.3, 1.0)
 	return ship
 
 func _build_camera(ship: ShipController) -> void:
@@ -350,6 +363,35 @@ func _build_mission(ship: ShipController, dock: ShipZone, mdef: MissionDef) -> v
 	mm.mission_def = mdef
 	mm.setup(ship, ship.cargo, dock)
 	add_child(mm)
+
+## End-of-run bookkeeping: compute the payout, persist progression, stash a
+## summary for the results screen, then hand off after a short beat.
+func _on_mission_state_changed(state: String) -> void:
+	if state != "success" and state != "failed":
+		return
+	if _run_finished:
+		return
+	_run_finished = true
+	var success := state == "success"
+	var has_core: bool = _ship.cargo != null and _ship.cargo.has_item(MissionManager.DATA_CORE)
+	var reward := RewardCalculator.compute(success, _drones_killed, has_core, _mission_def.reward_credits)
+
+	PlayerProfile.credits += reward
+	if success:
+		PlayerProfile.mission_completions += 1
+		if _ship.cargo != null:
+			PlayerProfile.total_cargo_extracted += _ship.cargo.items.size()
+	PlayerProfile.ship_hull_pct = clampf(_ship.current_hull / _ship.ship_def.hull_max, 0.0, 1.0)
+	PlayerProfile.save_profile()
+	PlayerProfile.last_run = {
+		"success": success,
+		"credits_earned": reward,
+		"drones_killed": _drones_killed,
+		"data_core": has_core,
+	}
+
+	get_tree().create_timer(RESULTS_DELAY).timeout.connect(
+		func() -> void: get_tree().change_scene_to_file(RESULTS_SCENE))
 
 func _on_ship_destroyed() -> void:
 	if _ship == null:
