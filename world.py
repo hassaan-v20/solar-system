@@ -6,9 +6,11 @@ read this; they never own state. Mutations go through `apply(command)` so the
 co-op server can replay the exact same commands on every client.
 """
 
+import json
 import math
 import random
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
 
 ORBIT_SPEED = 0.3          # sim-years per sim-second (shared with renderer)
 EARTH_DIST  = 20.0         # reference distance for Kepler period scaling
@@ -41,6 +43,10 @@ BODY_TYPES = {
                    radius=0.70, special=None,    tint=(1.50, 0.55, 0.25), emit=0.35, cost=150.0),
     "ice":    dict(name="Ice",    swatch=(0.72, 0.85, 1.00), tex="2k_moon.jpg",
                    radius=0.70, special=None,    tint=(0.70, 0.85, 1.15), emit=0.0, cost=130.0),
+    "toxic":  dict(name="Toxic",  swatch=(0.45, 0.85, 0.35), tex="2k_venus_surface.jpg",
+                   radius=0.85, special=None,    tint=(0.55, 1.25, 0.45), emit=0.0, cost=140.0),
+    "sulfur": dict(name="Sulfur", swatch=(0.95, 0.85, 0.30), tex="2k_venus_surface.jpg",
+                   radius=0.70, special=None,    tint=(1.40, 1.20, 0.40), emit=0.15, cost=140.0),
     "gas":    dict(name="Gas",    swatch=(0.90, 0.75, 0.50), tex=None,
                    radius=2.60, special="gas",   tint=(1.00, 1.00, 1.00), emit=0.0, cost=350.0),
     "star":   dict(name="Star",   swatch=(1.00, 0.85, 0.40), tex="2k_sun.jpg",
@@ -298,3 +304,47 @@ class World:
     def notify(self, text, secs=2.5):
         self.message = text
         self.message_t = secs
+
+    # ── persistence ─────────────────────────────────────────────────────────────
+    def to_dict(self, sim_time=0.0):
+        inf = float("inf")
+        return {
+            "mode": self.mode,
+            "energy": None if self.energy == inf else self.energy,
+            "score": self.score,
+            "elapsed": self._elapsed,
+            "comet_timer": self._comet_timer,
+            "next_cid": self._next_cid,
+            "sim_time": sim_time,
+            "bodies": [asdict(b) for b in self.bodies],
+            "comets": [asdict(c) for c in self.comets],
+        }
+
+    @classmethod
+    def from_dict(cls, d):
+        w = cls(d["mode"])
+        w.bodies = [Body(**b) for b in d["bodies"]]
+        w.comets = [Comet(**c) for c in d["comets"]]
+        w.energy = float("inf") if d.get("energy") is None else d["energy"]
+        w.score = d.get("score", 0)
+        w._elapsed = d.get("elapsed", 0.0)
+        w._comet_timer = d.get("comet_timer", COMET_BASE_GAP)
+        w._next_cid = d.get("next_cid", 0)
+        return w, d.get("sim_time", 0.0)
+
+
+SAVE_PATH = Path(__file__).parent / "savegame.json"
+
+
+def has_save(path=SAVE_PATH):
+    return Path(path).exists()
+
+
+def save_game(world, sim_time, path=SAVE_PATH):
+    with open(path, "w") as f:
+        json.dump(world.to_dict(sim_time), f)
+
+
+def load_game(path=SAVE_PATH):
+    with open(path) as f:
+        return World.from_dict(json.load(f))

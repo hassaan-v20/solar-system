@@ -5,9 +5,13 @@ pygame.font into an RGBA texture and drawn as a screen-space quad. Textures are
 rebuilt each frame and released in end(), which is plenty fast for a few labels.
 """
 
+from pathlib import Path
+
 import numpy as np
 import pygame
 import moderngl
+
+ORBITRON = Path(__file__).parent / "fonts" / "Orbitron.ttf"
 
 _VERT = """
 #version 330 core
@@ -47,13 +51,25 @@ class Hud:
     def resize(self, width, height):
         self.width, self.height = max(1, width), max(1, height)
 
-    def _font(self, size):
-        if size not in self._fonts:
-            try:
-                self._fonts[size] = pygame.font.SysFont("consolas,couriernew", size)
-            except Exception:
-                self._fonts[size] = pygame.font.Font(None, size)
-        return self._fonts[size]
+    def _font(self, size, face="body"):
+        """face: 'title'/'ui' use Orbitron (sci-fi); 'body' uses a clean sans."""
+        key = (face, size)
+        if key not in self._fonts:
+            f = None
+            if face in ("title", "ui") and ORBITRON.exists():
+                try:
+                    f = pygame.font.Font(str(ORBITRON), size)
+                    if face == "title":
+                        f.set_bold(True)
+                except Exception:
+                    f = None
+            if f is None:
+                try:
+                    f = pygame.font.SysFont("segoeui,arial,dejavusans", size)
+                except Exception:
+                    f = pygame.font.Font(None, size)
+            self._fonts[key] = f
+        return self._fonts[key]
 
     def begin(self):
         self.ctx.disable(moderngl.DEPTH_TEST)
@@ -92,14 +108,14 @@ class Hud:
         self.panel(px - bw, py - bw, w + 2 * bw, h + 2 * bw, border)
         self.panel(px, py, w, h, fill)
 
-    def text_center(self, cx, py, string, size=20, color=(255, 255, 255)):
-        w, _h = self.measure(string, size)
-        return self.text(int(cx - w / 2), py, string, size, color)
+    def text_center(self, cx, py, string, size=20, color=(255, 255, 255), face="body"):
+        w, _h = self.measure(string, size, face)
+        return self.text(int(cx - w / 2), py, string, size, color, face)
 
-    def text(self, px, py, string, size=20, color=(255, 255, 255)):
+    def text(self, px, py, string, size=20, color=(255, 255, 255), face="body"):
         if not string:
             return (0, 0)
-        surf = self._font(size).render(string, True, color).convert_alpha()
+        surf = self._font(size, face).render(string, True, color).convert_alpha()
         w, h = surf.get_size()
         # GL samples v=0 at the first data row; keep the glyph's top row first so
         # text reads upright on screen (origin bottom-left).
@@ -110,5 +126,5 @@ class Hud:
         self._draw(px, py, w, h, tex, (1.0, 1.0, 1.0, 1.0))
         return (w, h)
 
-    def measure(self, string, size=20):
-        return self._font(size).size(string)
+    def measure(self, string, size=20, face="body"):
+        return self._font(size, face).size(string)

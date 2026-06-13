@@ -1,12 +1,13 @@
 # Stellar — a solar system sandbox
 
 A real-time 3D solar system game in Python using ModernGL (OpenGL 3.3) and
-Pygame. Explore the real solar system, freely build your own in Creative, or
-grow and defend one against incoming comets in Survival. Real NASA-based
-textures, a Milky Way galaxy skybox, HDR bloom, day/night Earth, and Saturn's
-rings.
+Pygame. Boots to a title screen; pick a mode with the mouse, build your own
+universe, and pick up where you left off with **Continue**. Explore the real
+solar system, freely build in Creative, or grow and defend one against incoming
+comets in Survival. Real NASA-based textures, distant galaxies, a Milky Way
+skybox, HDR bloom, day/night Earth, and Saturn's rings. Runs fullscreen.
 
-![preview](preview.png)
+![title screen](preview.png)
 
 ## Game modes
 
@@ -21,7 +22,10 @@ Switch any time with **F1 / F2 / F3**:
   **comets** drift in and destroy planets on impact — **click a comet to deflect
   it**. The pressure ramps over time. Build fast, defend faster.
 
-![survival](survival.png)
+From the title screen, **Continue** resumes your saved game, or start a fresh one
+in any mode. Your game autosaves when you return to the menu (Esc).
+
+![build mode](build.png)
 
 ## Run it
 
@@ -38,15 +42,17 @@ decade). Developed and tested on an AMD Radeon RX 6600 XT.
 | Input              | Action                                  |
 | ------------------ | --------------------------------------- |
 | `F1` / `F2` / `F3` | Explore / Creative / Survival mode      |
-| `1` – `8`          | Pick body: Moon, Rocky, Ocean, Desert, Lava, Ice, Gas, Star |
+| Click badges / bar | Switch mode or pick a body with the mouse |
+| `1` – `0`          | Pick body: Moon, Rocky, Ocean, Desert, Lava, Ice, Toxic, Sulfur, Gas, Star |
 | Left click         | Place selected body, or deflect a comet |
 | Drag mouse         | Orbit the camera                        |
 | Scroll wheel       | Zoom in / out                           |
 | `+` / `-`          | Speed up / slow down time               |
 | `Space`            | Pause / resume                          |
 | `H`                | Toggle the help overlay                 |
+| `F11`              | Toggle fullscreen                       |
 | `R`                | Reset the camera                        |
-| `Esc`              | Quit                                    |
+| `Esc`              | Back to the title menu (autosaves)      |
 
 ## Project layout
 
@@ -55,11 +61,13 @@ main.py        window, input, modes, HUD, main loop
 world.py       authoritative game state: bodies, comets, energy, commands
 scene.py       renderer: planets, skybox, rings, comets, bloom pipeline
 camera.py      orbital camera + mouse-ray picking
-hud.py         2D text/panel overlay (mode badges, hotbar, help)
+hud.py         2D text/panel overlay (title, mode badges, hotbar, help)
 sprites.py     procedural galaxy / nebula sprite generation
 mesh.py        sphere / ring / quad geometry
 shaders/       GLSL: planets, skybox, galaxies, clouds, rings, bloom passes
 textures/      planet + galaxy texture maps
+fonts/         Orbitron (UI font)
+savegame.json  your saved game (created on Esc; git-ignored)
 ```
 
 ## Multiplayer roadmap
@@ -88,3 +96,7 @@ Planet, Sun, Moon, ring, and Milky Way textures by **Solar System Scope**
 (<https://www.solarsystemscope.com/textures>), licensed under
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Based on NASA
 elevation and imagery data.
+
+UI font **Orbitron** by Matt McInerney, licensed under the
+[SIL Open Font License 1.1](fonts/OFL.txt). Distant galaxies are generated
+procedurally (`sprites.py`).
