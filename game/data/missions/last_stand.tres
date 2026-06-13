@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="MissionDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/mission_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+mission_id = "last_stand"
+display_name = "LAST STAND  ·  hold the station"
+mission_type = "defend"
+hold_time = 40.0
+extract_time = 55.0
+target_count = 0
+reward = 1500
+start_enemies = 7
+reinforce = 6
+reinforce_gap = 7.0
+extract_reinforce = 8

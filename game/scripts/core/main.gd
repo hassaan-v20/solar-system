@@ -10,6 +10,7 @@ var _rng := RandomNumberGenerator.new()
 var _ship: ShipController
 var _hud: ShipHUD
 var _cam: ChaseCamera
+var _mission: MissionManager
 var _engine_mat: StandardMaterial3D
 var _asteroids: Array = []        # [{node, axis, speed}]
 var _enemies: int = 0
@@ -27,6 +28,9 @@ func _ready() -> void:
 	_setup_input()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	add_child(Sfx.new())
+	var fx := Fx.new()
+	fx.world = self
+	add_child(fx)
 	_build_environment()
 	_ship = _build_ship()
 	_build_weapon(_ship)
@@ -38,12 +42,40 @@ func _ready() -> void:
 	_spawn_wave()
 	_start_mission()
 
+const MISSIONS := [
+	"res://data/missions/ghost_station.tres",
+	"res://data/missions/salvage_run.tres",
+	"res://data/missions/last_stand.tres",
+	"res://data/missions/bounty_hunt.tres",
+	"res://data/missions/deep_core.tres",
+]
+
 func _start_mission() -> void:
-	var mm := MissionManager.new()
-	mm.world = self
-	mm.ship = _ship
-	add_child(mm)
-	mm.begin()
+	EventBus.mission_spawn.connect(_on_mission_spawn)
+	EventBus.mission_state_changed.connect(_on_mission_state)
+	_new_mission()
+
+func _new_mission() -> void:
+	for o in get_tree().get_nodes_in_group("objective"):
+		o.queue_free()
+	var def := load(MISSIONS[_rng.randi() % MISSIONS.size()])
+	_mission = MissionManager.new()
+	_mission.world = self
+	_mission.ship = _ship
+	_mission.mission_def = def
+	add_child(_mission)
+	_mission.begin()
+
+func _on_mission_spawn(count: int, near: Vector3, _elite: bool) -> void:
+	for i in count:
+		_spawn_enemy(_pick_enemy(), near)
+
+func _on_mission_state(state: String) -> void:
+	if state == "complete" or state == "failed":
+		await get_tree().create_timer(6.0).timeout
+		if is_instance_valid(_mission):
+			_mission.queue_free()
+		_new_mission()
 
 func _process(delta: float) -> void:
 	for a in _asteroids:
@@ -101,11 +133,11 @@ func _setup_input() -> void:
 
 # ── world ─────────────────────────────────────────────────────────────────────
 func _build_environment() -> void:
-	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-35, 40, 0)
-	sun.light_energy = 1.15
-	sun.light_color = Color(1.0, 0.96, 0.9)
-	add_child(sun)
+	# Three distant suns: each a visible bright star plus a directional light, so
+	# the whole sector is well lit and easy to read while still feeling like space.
+	_build_sun(Vector3(1.0, 0.45, 0.6), Color(1.0, 0.92, 0.78), 1.7, 30.0)    # warm key
+	_build_sun(Vector3(-0.7, 0.25, -0.8), Color(0.55, 0.7, 1.0), 0.7, 22.0)   # cool fill
+	_build_sun(Vector3(0.2, -0.55, 0.8), Color(1.0, 0.6, 0.7), 0.5, 18.0)     # pink rim
 
 	var env := Environment.new()
 	var sky_mat := ShaderMaterial.new()
@@ -115,17 +147,44 @@ func _build_environment() -> void:
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.45
+	env.ambient_light_energy = 0.95
 	env.glow_enabled = true
-	env.glow_intensity = 0.55
-	env.glow_bloom = 0.2
+	env.glow_intensity = 0.7
+	env.glow_bloom = 0.25
+	env.glow_strength = 1.1
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
+	env.tonemap_exposure = 1.05
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.02, 0.03, 0.06)
-	env.fog_density = 0.0014
+	env.fog_light_color = Color(0.03, 0.04, 0.08)
+	env.fog_density = 0.0011
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
+
+func _build_sun(dir: Vector3, col: Color, energy: float, radius: float) -> void:
+	var d := dir.normalized()
+	# Visible star far away.
+	var star := MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = radius
+	sm.height = radius * 2.0
+	star.mesh = sm
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = col
+	mat.emission_enabled = true
+	mat.emission = col
+	mat.emission_energy_multiplier = 8.0
+	star.material_override = mat
+	add_child(star)
+	star.global_position = d * 1700.0
+	# Directional light from that star.
+	var dl := DirectionalLight3D.new()
+	dl.light_color = col
+	dl.light_energy = energy
+	add_child(dl)
+	if absf(d.dot(Vector3.UP)) < 0.98:
+		dl.look_at(-d, Vector3.UP)
 
 func _build_ship() -> ShipController:
 	var ship := ShipController.new()
@@ -175,6 +234,27 @@ func _build_ship() -> ShipController:
 	_part(ship, nac, Vector3(-0.55, 0, 1.5), Vector3.ZERO, accent)
 	_part(ship, nac, Vector3(0.55, 0, 1.5), Vector3.ZERO, accent)
 
+	# Detail: dark belly, dorsal antenna, under-wing hardpoints, wingtip nav lights.
+	var dark := StandardMaterial3D.new()
+	dark.albedo_color = Color(0.18, 0.20, 0.24)
+	dark.metallic = 0.5
+	dark.roughness = 0.6
+	var belly := BoxMesh.new()
+	belly.size = Vector3(0.7, 0.22, 1.8)
+	_part(ship, belly, Vector3(0, -0.32, 0.2), Vector3.ZERO, dark)
+	var ant := BoxMesh.new()
+	ant.size = Vector3(0.06, 0.7, 0.06)
+	_part(ship, ant, Vector3(0, 0.7, 0.9), Vector3(8, 0, 0), dark)
+	var hp := BoxMesh.new()
+	hp.size = Vector3(0.22, 0.22, 0.9)
+	_part(ship, hp, Vector3(-1.7, -0.18, 0.5), Vector3.ZERO, dark)
+	_part(ship, hp, Vector3(1.7, -0.18, 0.5), Vector3.ZERO, dark)
+	var navmesh := SphereMesh.new()
+	navmesh.radius = 0.12
+	navmesh.height = 0.24
+	_part(ship, navmesh, Vector3(-2.45, 0.05, 0.7), Vector3.ZERO, _emit_mat(Color(1.0, 0.2, 0.2)))
+	_part(ship, navmesh, Vector3(2.45, 0.05, 0.7), Vector3.ZERO, _emit_mat(Color(0.2, 1.0, 0.3)))
+
 	# Engine glow at the back; pulses with thrust/boost (driven in _process).
 	var engine := MeshInstance3D.new()
 	var em := SphereMesh.new()
@@ -208,6 +288,15 @@ func _part(parent: Node3D, mesh: Mesh, pos: Vector3, rot_deg: Vector3, mat: Mate
 	mi.rotation_degrees = rot_deg
 	mi.material_override = mat
 	parent.add_child(mi)
+
+func _emit_mat(c: Color) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.albedo_color = c
+	m.emission_enabled = true
+	m.emission = c
+	m.emission_energy_multiplier = 3.0
+	return m
 
 func _build_weapon(ship: ShipController) -> void:
 	var w := WeaponController.new()
@@ -303,9 +392,12 @@ func _pick_enemy() -> String:
 		return "res://data/enemies/interceptor.tres"
 	return "res://data/enemies/light_drone.tres"
 
-func _spawn_enemy(path: String) -> void:
+func _spawn_enemy(path: String, center: Vector3 = Vector3.INF) -> void:
 	if not is_instance_valid(_ship):
 		return
+	var c := center
+	if c == Vector3.INF:
+		c = _ship.global_position
 	var d := EnemyDroneAI.new()
 	var ed := load(path)
 	if ed is EnemyDef:
@@ -314,7 +406,7 @@ func _spawn_enemy(path: String) -> void:
 	d.target = _ship
 	d.destroyed.connect(_on_enemy_destroyed)
 	add_child(d)
-	d.global_position = _ship.global_position + _random_unit() * _rng.randf_range(150.0, 250.0)
+	d.global_position = c + _random_unit() * _rng.randf_range(120.0, 230.0)
 	_enemies += 1
 
 func _on_enemy_destroyed(score: int, _at: Vector3) -> void:

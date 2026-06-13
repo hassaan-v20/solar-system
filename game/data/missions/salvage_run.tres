@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="MissionDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/mission_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+mission_id = "salvage_run"
+display_name = "SALVAGE RUN  ·  recover the cargo"
+mission_type = "salvage"
+hold_time = 0.0
+extract_time = 65.0
+target_count = 5
+reward = 1000
+start_enemies = 5
+reinforce = 4
+reinforce_gap = 9.0
+extract_reinforce = 6

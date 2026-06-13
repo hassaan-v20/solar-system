@@ -11,8 +11,8 @@ var current_shield: float = 0.0
 var is_boosting: bool = false
 var is_dead: bool = false
 
-const SHIELD_REGEN := 18.0          # shield points per second
-const REGEN_DELAY := 4.0            # seconds after a hit before shields recharge
+const SHIELD_REGEN := 12.0          # shield points per second
+const REGEN_DELAY := 6.0            # seconds after a hit before shields recharge
 
 var _mouse_delta: Vector2 = Vector2.ZERO
 var _since_hit: float = 999.0

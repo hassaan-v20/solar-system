@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="MissionDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/mission_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+mission_id = "ghost_station"
+display_name = "GHOST STATION  ·  hack the data core"
+mission_type = "hack"
+hold_time = 9.0
+extract_time = 60.0
+target_count = 0
+reward = 1200
+start_enemies = 6
+reinforce = 4
+reinforce_gap = 10.0
+extract_reinforce = 7

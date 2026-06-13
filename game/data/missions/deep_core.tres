@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="MissionDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/mission_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+mission_id = "deep_core"
+display_name = "DEEP CORE  ·  long hack, short window"
+mission_type = "hack"
+hold_time = 13.0
+extract_time = 48.0
+target_count = 0
+reward = 1800
+start_enemies = 8
+reinforce = 5
+reinforce_gap = 8.0
+extract_reinforce = 9

@@ -25,11 +25,11 @@ func _ready() -> void:
 
 func _on_shot(team: String) -> void:
 	if team == "missile":
-		_play("missile")
+		_play("missile", -3.0)
 	elif team == "enemy":
-		_play("elaser")
+		_play("elaser", -10.0)      # quieter — many enemies firing
 	else:
-		_play("laser")
+		_play("laser", -2.0)        # crisp and present
 
 func _play(name: String, vol_db: float = -6.0) -> void:
 	if not _sounds.has(name):
@@ -42,8 +42,10 @@ func _play(name: String, vol_db: float = -6.0) -> void:
 
 # ── synthesis ─────────────────────────────────────────────────────────────────
 func _build() -> void:
-	_sounds["laser"] = _wav(_sweep(900.0, 420.0, 0.12, 0.9))
-	_sounds["elaser"] = _wav(_sweep(500.0, 240.0, 0.14, 0.8))
+	# Punchy blaster: a sharp click transient + a fast descending zap + a low body.
+	_sounds["laser"] = _wav(_mix(_mix(_noise(0.02, 45.0, 0.9), _sweep(1500.0, 560.0, 0.10, 1.0)),
+								  _sweep(430.0, 170.0, 0.09, 0.55)))
+	_sounds["elaser"] = _wav(_mix(_noise(0.02, 40.0, 0.7), _sweep(780.0, 300.0, 0.13, 0.95)))
 	_sounds["missile"] = _wav(_mix(_noise(0.30, 6.0, 0.5), _sweep(180.0, 90.0, 0.30, 0.5)))
 	_sounds["hit"] = _wav(_tone(1200.0, 0.05, 0.7))
 	_sounds["explosion"] = _wav(_noise(0.45, 7.0, 1.0))

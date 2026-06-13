@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="MissionDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/mission_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+mission_id = "bounty_hunt"
+display_name = "BOUNTY HUNT  ·  wipe out the raiders"
+mission_type = "bounty"
+hold_time = 0.0
+extract_time = 70.0
+target_count = 12
+reward = 1300
+start_enemies = 6
+reinforce = 5
+reinforce_gap = 8.0
+extract_reinforce = 6

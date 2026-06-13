@@ -51,8 +51,34 @@ func _try_fire(dir: Vector3) -> void:
 	p.color = bolt_color
 	world.add_child(p)
 	var origin := get_parent() as Node3D
-	p.global_position = origin.global_position + origin.global_transform.basis * muzzle_offset
+	var muzzle := origin.global_position + origin.global_transform.basis * muzzle_offset
+	p.global_position = muzzle
+	_muzzle_flash(muzzle)
 	EventBus.shot_fired.emit(team)
+
+func _muzzle_flash(at: Vector3) -> void:
+	if world == null:
+		return
+	var fx := MeshInstance3D.new()
+	var s := SphereMesh.new()
+	s.radius = 0.5
+	s.height = 1.0
+	fx.mesh = s
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.albedo_color = bolt_color
+	m.emission_enabled = true
+	m.emission = bolt_color
+	m.emission_energy_multiplier = 6.0
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	fx.material_override = m
+	world.add_child(fx)
+	fx.global_position = at
+	var tw := fx.create_tween()
+	tw.set_parallel(true)
+	tw.tween_property(fx, "scale", Vector3.ONE * 1.8, 0.10)
+	tw.tween_property(m, "albedo_color:a", 0.0, 0.10)
+	tw.chain().tween_callback(fx.queue_free)
 
 func heat_fraction() -> float:
 	return heat / maxf(1.0, weapon_def.max_heat)

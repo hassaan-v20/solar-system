@@ -25,10 +25,21 @@ fog, and spinning asteroids.
 
 ## In progress: Milestone 3 — the raid loop
 
-A first mission state machine: **fly to the derelict station → hack its data core
-(hold position) → extract at the jump point before the timer runs out**, all while
-fighting. Objective text, an extraction countdown, and cyan objective markers
-(with off-screen arrows) guide you; mission complete/failed banners close it out.
+**Data-driven missions** (`data/missions/*.tres`) — a random contract each run:
+- **Ghost Station / Deep Core** (hack) — hold the station core to hack it
+- **Salvage Run** — collect scattered cargo caches
+- **Last Stand** (defend) — hold the station against waves
+- **Bounty Hunt** — destroy a quota of raiders
+
+…then **extract at the jump point before the timer**. Missions throw
+**reinforcements** at you (start, periodic, and a surge when you start extracting),
+so they're tense to finish. Objective text, an extraction countdown, and cyan
+objective markers (with off-screen arrows) guide you; complete/fail chains into a
+new random contract.
+
+**Combat polish & visuals:** muzzle flashes, impact sparks, explosion flashes +
+camera shake, punchy blaster audio, three distant suns lighting the sector (bright
+and readable), stronger bloom, and more detailed ships.
 
 ## Run it
 
