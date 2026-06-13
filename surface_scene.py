@@ -12,13 +12,13 @@ SHADER_DIR = Path(__file__).parent / "shaders"
 
 # planet kind -> (ground texture, ground tint, sky/fog colour, terrain amplitude)
 THEME = {
-    "rocky":  ("2k_mercury.jpg",       (1.00, 0.95, 0.90), (0.16, 0.13, 0.11), 7.0),
-    "ocean":  ("2k_earth_daymap.jpg",  (0.70, 1.00, 0.72), (0.35, 0.55, 0.85), 3.5),
-    "desert": ("2k_venus_surface.jpg", (1.12, 0.92, 0.55), (0.62, 0.46, 0.28), 6.0),
-    "lava":   ("2k_venus_surface.jpg", (1.45, 0.45, 0.22), (0.26, 0.07, 0.05), 11.0),
-    "ice":    ("2k_moon.jpg",          (0.72, 0.85, 1.12), (0.62, 0.70, 0.82), 5.0),
-    "toxic":  ("2k_venus_surface.jpg", (0.50, 1.10, 0.42), (0.20, 0.36, 0.16), 6.0),
-    "sulfur": ("2k_venus_surface.jpg", (1.30, 1.12, 0.38), (0.48, 0.44, 0.16), 6.5),
+    "rocky":  ("2k_mercury.jpg",       (1.00, 0.95, 0.90), (0.16, 0.13, 0.11), 26.0),
+    "ocean":  ("2k_earth_daymap.jpg",  (0.70, 1.00, 0.72), (0.35, 0.55, 0.85), 12.0),
+    "desert": ("2k_venus_surface.jpg", (1.12, 0.92, 0.55), (0.62, 0.46, 0.28), 28.0),
+    "lava":   ("2k_venus_surface.jpg", (1.45, 0.45, 0.22), (0.26, 0.07, 0.05), 42.0),
+    "ice":    ("2k_moon.jpg",          (0.72, 0.85, 1.12), (0.62, 0.70, 0.82), 22.0),
+    "toxic":  ("2k_venus_surface.jpg", (0.50, 1.10, 0.42), (0.20, 0.36, 0.16), 26.0),
+    "sulfur": ("2k_venus_surface.jpg", (1.30, 1.12, 0.38), (0.48, 0.44, 0.16), 30.0),
 }
 
 
@@ -81,7 +81,7 @@ class SurfaceRenderer:
         def gh(x, z):
             return surf.terrain.height(x, z) if surf.terrain else 0.0
 
-        eye_y = gh(surf.x, surf.z) + 1.7
+        eye_y = gh(surf.x, surf.z) + surf.eye_off
         eye = np.array([surf.x, eye_y, surf.z], dtype="f4")
         cp, sp = math.cos(surf.pitch), math.sin(surf.pitch)
         fwd = np.array([cp * math.sin(surf.yaw), sp, cp * math.cos(surf.yaw)], dtype="f4")
@@ -145,13 +145,20 @@ class SurfaceRenderer:
             self.prog_bb["size"].value = rs
             self.bb_vao.render(moderngl.TRIANGLE_STRIP)
 
-        # Creatures.
+        # Creatures (with hop / hover animation).
+        tnow = surf.time
         for c in surf.creatures:
             if not c.alive:
                 continue
             st = CREATURES[c.kind]
+            base = gh(c.x, c.z)
+            hover = st.get("hover", 0.0)
+            if hover > 0.0:
+                y = base + hover + math.sin(tnow * 2.2 + c.phase) * 0.5
+            else:
+                y = base + abs(math.sin(tnow * 6.0 + c.phase)) * 0.18
             self.tex_creature[st["variant"]].use(0)
-            self.prog_bb["center"].value = (float(c.x), gh(c.x, c.z), float(c.z))
+            self.prog_bb["center"].value = (float(c.x), float(y), float(c.z))
             self.prog_bb["size"].value = float(st["size"])
             self.prog_bb["color"].value = tuple(st["color"])
             self.bb_vao.render(moderngl.TRIANGLE_STRIP)

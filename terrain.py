@@ -5,7 +5,7 @@ from PIL import Image
 
 
 class Terrain:
-    def __init__(self, seed=0, amp=6.0, octaves=5, base_cells=6, extent=130.0, res=110):
+    def __init__(self, seed=0, amp=18.0, octaves=6, base_cells=5, extent=360.0, res=200):
         self.extent = float(extent)
         self.res = int(res)
         rng = np.random.default_rng(seed)
@@ -31,7 +31,7 @@ class Terrain:
         # Flatten a small landing clearing at the centre so you don't spawn in rock.
         xs = np.linspace(-self.extent, self.extent, size)
         gx, gz = np.meshgrid(xs, xs)
-        clear = np.clip(1.0 - (np.hypot(gx, gz) / 14.0), 0.0, 1.0) ** 2
+        clear = np.clip(1.0 - (np.hypot(gx, gz) / 22.0), 0.0, 1.0) ** 2
         self.h *= (1.0 - clear)
 
     def height(self, x, z):

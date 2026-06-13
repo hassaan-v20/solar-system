@@ -8,12 +8,16 @@ import math
 import random
 from dataclasses import dataclass
 
-PLAY_RADIUS   = 70.0
-EYE_HEIGHT    = 1.7
-PLAYER_SPEED  = 10.0
+PLAY_RADIUS   = 352.0
+EYE_STAND     = 1.7
+EYE_CROUCH    = 1.0
+PLAYER_SPEED  = 11.0
 PLAYER_MAX_HP = 100.0
-CREATURE_CAP  = 11
-SPAWN_GAP     = 2.2
+GRAVITY       = 22.0
+JUMP_V        = 8.5
+CREATURE_CAP  = 14
+SPAWN_GAP     = 2.0
+AGGRO         = 36.0
 
 # weapon key -> stats.  range >10 counts as ranged (narrower aim).
 WEAPONS = {
@@ -38,15 +42,15 @@ RECIPE_LABEL = {"blade": "Alloy Blade", "hide": "Hide Armour",
                 "blaster": "Plasma Blaster", "plated": "Plated Armour"}
 
 CREATURES = {
-    "critter": {"hp": 18, "dmg": 6,  "speed": 3.6, "size": 1.7, "variant": 0,
+    "critter": {"hp": 18, "dmg": 6,  "speed": 3.6, "size": 1.7, "variant": 0, "hover": 0.0,
                 "loot": ["hide", "bone"],                  "color": (0.55, 0.85, 0.40)},
-    "alien":   {"hp": 30, "dmg": 12, "speed": 4.4, "size": 2.1, "variant": 1,
+    "alien":   {"hp": 30, "dmg": 12, "speed": 4.4, "size": 2.1, "variant": 1, "hover": 0.0,
                 "loot": ["crystal", "alloy"],              "color": (0.60, 0.45, 0.98)},
-    "brute":   {"hp": 64, "dmg": 19, "speed": 2.4, "size": 3.1, "variant": 2,
+    "brute":   {"hp": 64, "dmg": 19, "speed": 2.4, "size": 3.1, "variant": 2, "hover": 0.0,
                 "loot": ["hide", "bone", "bone", "alloy"], "color": (0.80, 0.40, 0.28)},
-    "stalker": {"hp": 22, "dmg": 9,  "speed": 5.3, "size": 1.6, "variant": 3,
+    "stalker": {"hp": 22, "dmg": 9,  "speed": 5.3, "size": 1.6, "variant": 3, "hover": 0.0,
                 "loot": ["crystal", "hide"],               "color": (0.35, 0.90, 0.85)},
-    "flyer":   {"hp": 26, "dmg": 10, "speed": 4.0, "size": 1.9, "variant": 4,
+    "flyer":   {"hp": 26, "dmg": 10, "speed": 4.0, "size": 1.9, "variant": 4, "hover": 2.0,
                 "loot": ["alloy", "crystal"],              "color": (0.45, 0.80, 1.00)},
 }
 ITEM_COLOR = {"hide": (0.75, 0.52, 0.35), "bone": (0.92, 0.92, 0.82),
@@ -62,6 +66,10 @@ class Creature:
     hp: float
     cd: float = 0.0
     alive: bool = True
+    phase: float = 0.0     # animation offset
+    wx: float = 0.0        # current wander target
+    wz: float = 0.0
+    wt: float = 0.0        # time until a new wander target
 
 
 @dataclass
@@ -79,6 +87,11 @@ class Surface:
         self.z = 0.0
         self.yaw = 0.0
         self.pitch = 0.0
+        self.time = 0.0        # animation clock
+        self.vy = 0.0          # vertical velocity (jump)
+        self.air = 0.0         # height above the ground
+        self.crouch = False
+        self.eye_off = EYE_STAND
         self.hp = PLAYER_MAX_HP
         self.weapon = "fists"
         self.armor = "none"
@@ -94,25 +107,43 @@ class Surface:
         self.message = ""
         self.message_t = 0.0
 
+    @property
+    def bound(self):
+        return self.terrain.extent - 8.0 if self.terrain else PLAY_RADIUS
+
+    def jump(self):
+        if not self.dead and self.air <= 0.01:
+            self.vy = JUMP_V
+
     # ── per-frame update ────────────────────────────────────────────────────────
-    def update(self, dt, forward, strafe):
+    def update(self, dt, forward, strafe, crouch=False):
+        self.time += dt
         if self.dead:
             if self.message_t > 0:
                 self.message_t -= dt
             return
-        # Move relative to facing. forward matches the camera; right = camera-right
-        # (cross of forward and up) so D strafes screen-right, A screen-left.
+
+        self.crouch = crouch and self.air <= 0.01
+        speed = PLAYER_SPEED * (0.5 if self.crouch else 1.0) * (0.85 if self.air > 0 else 1.0)
         fx, fz = math.sin(self.yaw), math.cos(self.yaw)
         rx, rz = -math.cos(self.yaw), math.sin(self.yaw)
         mx, mz = fx * forward + rx * strafe, fz * forward + rz * strafe
         n = math.hypot(mx, mz)
         if n > 0:
-            self.x += mx / n * PLAYER_SPEED * dt
-            self.z += mz / n * PLAYER_SPEED * dt
+            self.x += mx / n * speed * dt
+            self.z += mz / n * speed * dt
             r = math.hypot(self.x, self.z)
-            if r > PLAY_RADIUS:
-                self.x *= PLAY_RADIUS / r
-                self.z *= PLAY_RADIUS / r
+            if r > self.bound:
+                self.x *= self.bound / r
+                self.z *= self.bound / r
+
+        # Jump / gravity.
+        self.air = max(0.0, self.air + self.vy * dt)
+        self.vy -= GRAVITY * dt
+        if self.air <= 0.0:
+            self.air = 0.0
+            self.vy = 0.0
+        self.eye_off = (EYE_CROUCH if self.crouch else EYE_STAND) + self.air
 
         self.attack_cd = max(0.0, self.attack_cd - dt)
         if self.message_t > 0:
@@ -129,14 +160,26 @@ class Surface:
             st = CREATURES[c.kind]
             dx, dz = self.x - c.x, self.z - c.z
             d = math.hypot(dx, dz) or 1.0
-            if d > 1.7:
-                c.x += dx / d * st["speed"] * dt
-                c.z += dz / d * st["speed"] * dt
-            else:
-                c.cd -= dt
-                if c.cd <= 0:
-                    c.cd = 1.0
-                    self._hurt(st["dmg"])
+            if d < AGGRO:                      # chase the player
+                if d > 1.7:
+                    c.x += dx / d * st["speed"] * dt
+                    c.z += dz / d * st["speed"] * dt
+                else:
+                    c.cd -= dt
+                    if c.cd <= 0:
+                        c.cd = 1.0
+                        self._hurt(st["dmg"])
+            else:                              # wander idly
+                c.wt -= dt
+                if c.wt <= 0:
+                    c.wt = random.uniform(2.5, 5.5)
+                    c.wx = c.x + random.uniform(-22, 22)
+                    c.wz = c.z + random.uniform(-22, 22)
+                wx, wz = c.wx - c.x, c.wz - c.z
+                wd = math.hypot(wx, wz)
+                if wd > 1.0:
+                    c.x += wx / wd * st["speed"] * 0.45 * dt
+                    c.z += wz / wd * st["speed"] * 0.45 * dt
 
         for l in self.loot:
             if l.alive and math.hypot(self.x - l.x, self.z - l.z) < 2.3:
@@ -160,10 +203,11 @@ class Surface:
         dist = random.uniform(26, 46)
         x, z = self.x + dist * math.cos(a), self.z + dist * math.sin(a)
         r = math.hypot(x, z)
-        if r > PLAY_RADIUS:
-            x *= PLAY_RADIUS / r
-            z *= PLAY_RADIUS / r
-        self.creatures.append(Creature(kind, x, z, CREATURES[kind]["hp"]))
+        if r > self.bound:
+            x *= self.bound / r
+            z *= self.bound / r
+        self.creatures.append(Creature(kind, x, z, CREATURES[kind]["hp"],
+                                       phase=random.uniform(0, 6.28), wx=x, wz=z))
 
     # ── actions ──────────────────────────────────────────────────────────────────
     def attack(self):

@@ -24,6 +24,6 @@ void main() {
     vec3 lit = base * (ambient + sun_col * diff);
 
     float d = length(v_world.xz - cam.xz);
-    float fog = clamp((d - 35.0) / 70.0, 0.0, 1.0);
+    float fog = clamp((d - 80.0) / 190.0, 0.0, 1.0);
     frag_color = vec4(mix(lit, sky, fog), 1.0);
 }

@@ -41,14 +41,14 @@ sky**, in their real directions.
 
 ![surface](surface.png)
 
-- **L** open the land menu  ·  **WASD** move  ·  **mouse** look  ·
-  **left click** attack  ·  **Esc** return to space.
-- Each planet has its own **rugged terrain** — mountains, valleys and scattered
-  rocks — lit by its Sun, with the rest of the solar system (colour-coded) up in
-  the sky.
-- **Five alien species** (critter, alien, brute, stalker, flyer) roam and attack
-  — each looks and behaves differently. Kill them for loot: **hide, bone,
-  crystal, alloy**.
+- **L** land menu · **WASD** move · **Space** jump · **Ctrl** crouch ·
+  **mouse** look · **left click** attack · **Esc** return to space.
+- A big, roamable world with its own **rugged terrain** — large mountains,
+  valleys and scattered rocks — lit by its Sun, with the rest of the solar
+  system (colour-coded) up in the sky.
+- **Five alien species** (critter, alien, brute, stalker, flyer) that **wander,
+  then chase** when you get close, each with its own look and movement (the flyer
+  hovers!). Kill them for loot: **hide, bone, crystal, alloy**.
 - **Craft** better gear with keys **1-4**: Alloy Blade and Plasma Blaster
   (weapons), Hide and Plated Armour. Better weapons hit harder/farther; armour
   reduces the damage you take.

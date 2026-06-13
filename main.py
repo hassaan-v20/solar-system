@@ -284,7 +284,8 @@ def main():
             keys = pygame.key.get_pressed()
             fwd = (1 if keys[pygame.K_w] else 0) - (1 if keys[pygame.K_s] else 0)
             strafe = (1 if keys[pygame.K_d] else 0) - (1 if keys[pygame.K_a] else 0)
-            surf.update(dt, fwd, strafe)
+            crouch = keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL]
+            surf.update(dt, fwd, strafe, crouch)
         else:
             title_time += dt * 0.3
             camera.yaw += dt * 3.0
@@ -340,6 +341,8 @@ def main():
                         pygame.event.set_grab(False)
                         pygame.mouse.set_visible(True)
                         state = "playing"
+                    elif event.key == pygame.K_SPACE:
+                        surf.jump()
                     elif event.key in (pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4):
                         idx = [pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4].index(event.key)
                         surf.craft(RECIPE_ORDER[idx])
@@ -772,7 +775,8 @@ def draw_surface_hud(hud, surf, W, H):
     hud.panel(cx - 1, cy - 10, 2, 20, ch)
     hud.panel(cx - 10, cy - 1, 20, 2, ch)
 
-    hud.text(14, 12, "WASD move   ·   mouse look   ·   click attack   ·   1-4 craft   ·   Esc leave",
+    hud.text(14, 12,
+             "WASD move  ·  Space jump  ·  Ctrl crouch  ·  mouse look  ·  click attack  ·  1-4 craft  ·  Esc leave",
              15, (165, 175, 195), "body")
 
     # Health card.
