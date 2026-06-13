@@ -12,12 +12,17 @@ signal hosted
 signal joined
 signal join_failed
 signal peers_changed
+signal all_peers_in_raid(peer_ids: Array)   # host-side: everyone has loaded the raid
 
 const DEFAULT_PORT := 7777
 const MAX_PEERS := 3        # host + up to 3 clients
+const RAID_SCENE := "res://scenes/raid/ghost_station_raid.tscn"
 
 var world_seed: int = 0
 var active: bool = false
+
+var _loaded_peers := {}     # host-side set of peers that have loaded the raid
+var _auto_launch := false   # CLI testing: host launches the raid when a client joins
 
 func _ready() -> void:
 	multiplayer.peer_connected.connect(_on_peer_connected)
@@ -63,9 +68,48 @@ func is_host() -> bool:
 func player_count() -> int:
 	return 1 + multiplayer.get_peers().size() if active else 0
 
+# ── co-op raid orchestration (M5 Phase 1b) ───────────────────────────────────
+## Host: send every client into the seeded raid, and load it locally. Spawning of
+## ships waits until all peers report in (see _peer_loaded), which sidesteps the
+## late-join replication race.
+func start_coop_raid() -> void:
+	if not is_host():
+		return
+	_loaded_peers.clear()
+	_load_raid.rpc(world_seed)
+	get_tree().change_scene_to_file(RAID_SCENE)
+
+@rpc("authority", "call_remote", "reliable")
+func _load_raid(seed: int) -> void:
+	world_seed = seed
+	get_tree().change_scene_to_file(RAID_SCENE)
+
+## Called by the raid scene (every peer) once it has loaded and its spawner exists.
+func report_in_raid() -> void:
+	if multiplayer.is_server():
+		_peer_loaded(multiplayer.get_unique_id())
+	else:
+		_notify_loaded.rpc_id(1)
+
+@rpc("any_peer", "call_remote", "reliable")
+func _notify_loaded() -> void:
+	_peer_loaded(multiplayer.get_remote_sender_id())
+
+func _peer_loaded(peer_id: int) -> void:
+	if not multiplayer.is_server():
+		return
+	_loaded_peers[peer_id] = true
+	var expected := 1 + multiplayer.get_peers().size()
+	print("Net: peer %d in raid (%d/%d)" % [peer_id, _loaded_peers.size(), expected])
+	if _loaded_peers.size() >= expected:
+		all_peers_in_raid.emit(_loaded_peers.keys())
+
 func _on_peer_connected(id: int) -> void:
 	print("Net: peer %d connected (%d players)" % [id, player_count()])
 	peers_changed.emit()
+	if _auto_launch and is_host():
+		_auto_launch = false
+		start_coop_raid()
 
 func _on_peer_disconnected(id: int) -> void:
 	print("Net: peer %d disconnected" % id)
@@ -88,6 +132,7 @@ func _on_server_disconnected() -> void:
 func _parse_cli() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg == "--host":
+			_auto_launch = true   # launch the raid as soon as a client connects
 			call_deferred("host_game")
 		elif arg.begins_with("--join="):
 			call_deferred("join_game", arg.substr("--join=".length()))

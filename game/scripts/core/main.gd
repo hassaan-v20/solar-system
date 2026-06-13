@@ -16,27 +16,44 @@ const LAYER_ENEMY := 4
 const RESULTS_SCENE := "res://scenes/station/results_screen.tscn"
 const RESULTS_DELAY := 2.5      # let the end-of-mission overlay / explosion read
 
+# Hull tints per player slot so co-op ships are distinguishable.
+const PEER_HULL_COLORS := [
+	Color(0.55, 0.62, 0.72),   # slot 0 (host) — steel
+	Color(0.80, 0.45, 0.25),   # slot 1 — rust
+	Color(0.45, 0.70, 0.45),   # slot 2 — green
+	Color(0.65, 0.50, 0.75),   # slot 3 — violet
+]
+
 var _rng := RandomNumberGenerator.new()
 var _want_capture := true
 var _ship: ShipController
 var _mission_def: MissionDef
 var _drones_killed: int = 0
 var _run_finished: bool = false
+var _spawner: MultiplayerSpawner
 
 func _ready() -> void:
-	_rng.randomize()
 	_setup_input()
 	# Use Godot's own fullscreen (a borderless window), NOT macOS native
 	# fullscreen (the green button) — native fullscreen opens a separate macOS
 	# Space where mouse capture / relative steering breaks.
 	_apply_fullscreen(true)
 	_set_capture(true)
+	_seed_rng()
+	# Shared, deterministic sector (built identically on every peer from the seed).
 	_build_environment()
 	_build_stars()
+	_build_asteroids()
+	if Net.active:
+		_setup_coop()
+	else:
+		_build_solo()
+
+## Single-player: own ship + camera + HUD + the full Ghost Station mission.
+func _build_solo() -> void:
 	_ship = _build_ship()
 	_build_camera(_ship)
 	_build_hud(_ship)
-	_build_asteroids()
 	_mission_def = load("res://data/missions/ghost_station.tres")
 	if _mission_def == null:
 		_mission_def = MissionDef.new()
@@ -45,6 +62,75 @@ func _ready() -> void:
 	EventBus.ship_destroyed.connect(_on_ship_destroyed)
 	EventBus.enemy_destroyed.connect(func() -> void: _drones_killed += 1)
 	EventBus.mission_state_changed.connect(_on_mission_state_changed)
+
+# ── co-op (M5 Phase 1b): each player flies their own ship in the shared sector;
+# mission / drones come in later phases. ───────────────────────────────────────
+func _setup_coop() -> void:
+	var ships_root := Node3D.new()
+	ships_root.name = "Ships"
+	add_child(ships_root)
+
+	_spawner = MultiplayerSpawner.new()
+	add_child(_spawner)
+	_spawner.spawn_path = _spawner.get_path_to(ships_root)
+	_spawner.spawn_function = _spawn_ship
+
+	# Spawn only once everyone has loaded (host-side), then announce we're in.
+	Net.all_peers_in_raid.connect(_on_all_in_raid)
+	Net.report_in_raid()
+
+## Host only: now that every peer's spawner exists, spawn one ship per player.
+func _on_all_in_raid(peer_ids: Array) -> void:
+	if not multiplayer.is_server():
+		return
+	var sorted := peer_ids.duplicate()
+	sorted.sort()   # deterministic slot assignment (host = peer 1 = slot 0)
+	for slot in sorted.size():
+		_spawner.spawn({"peer": sorted[slot], "slot": slot})
+
+## Runs on EVERY peer (driven by the spawner) to build the same ship locally.
+func _spawn_ship(data: Dictionary) -> Node:
+	var peer_id := int(data["peer"])
+	var slot := int(data.get("slot", 0))
+	var ship := ShipController.new()
+	ship.name = "Ship_%d" % peer_id
+	# Baseline stats (no per-player upgrades yet) so the build is identical on all
+	# peers; wiring profiles across the wire is a follow-up.
+	var base_def := load("res://data/ships/wayfarer.tres")
+	ship.ship_def = (base_def as ShipDef).duplicate()
+	_assemble_ship(ship, PEER_HULL_COLORS[slot % PEER_HULL_COLORS.size()])
+	ship.position = Vector3(slot * 18.0 - 9.0, 0.0, 0.0)
+	_add_ship_synchronizer(ship)
+	ship.set_multiplayer_authority(peer_id)   # recursive: weapon + synchronizer too
+	var mine := " (MINE)" if peer_id == multiplayer.get_unique_id() else ""
+	print("raid: spawned %s authority=%d slot=%d%s" % [ship.name, peer_id, slot, mine])
+	if peer_id == multiplayer.get_unique_id():
+		_attach_local_view.call_deferred(ship)
+	return ship
+
+func _attach_local_view(ship: ShipController) -> void:
+	_ship = ship
+	_build_camera(ship)
+	_build_hud(ship)
+
+## Replicates transform (every frame) and health (on change) from the owning peer.
+func _add_ship_synchronizer(ship: ShipController) -> void:
+	var cfg := SceneReplicationConfig.new()
+	for path in [NodePath(".:position"), NodePath(".:rotation")]:
+		cfg.add_property(path)
+		cfg.property_set_replication_mode(path, SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
+	for path in [NodePath(".:current_hull"), NodePath(".:current_shield")]:
+		cfg.add_property(path)
+		cfg.property_set_replication_mode(path, SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
+	var sync := MultiplayerSynchronizer.new()
+	sync.replication_config = cfg
+	ship.add_child(sync)
+
+func _seed_rng() -> void:
+	if Net.active:
+		_rng.seed = Net.world_seed   # identical sector on every peer
+	else:
+		_rng.randomize()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("toggle_mouse"):
@@ -203,14 +289,23 @@ func _build_ship() -> ShipController:
 	var base_def := load("res://data/ships/wayfarer.tres")
 	if base_def is ShipDef:
 		ship.ship_def = UpgradeSystem.outfit(base_def, PlayerProfile.owned_upgrades)
+	_assemble_ship(ship, PEER_HULL_COLORS[0])
+	add_child(ship)
+	# Carry persisted damage into the run (repairing at the station restores it),
+	# but floor it so an unrepaired ship is never launched dead/unplayable.
+	ship.current_hull = ship.ship_def.hull_max * clampf(PlayerProfile.ship_hull_pct, 0.3, 1.0)
+	return ship
 
+## Builds a ship's visuals, collision, weapon, and cargo onto `ship` (whose
+## ship_def must already be set). Shared by solo and co-op spawning.
+func _assemble_ship(ship: ShipController, hull_color: Color) -> void:
 	# Hull body (placeholder primitive)
 	var body := MeshInstance3D.new()
 	var box := BoxMesh.new()
 	box.size = Vector3(2.2, 0.7, 3.4)
 	body.mesh = box
 	var hull_mat := StandardMaterial3D.new()
-	hull_mat.albedo_color = Color(0.60, 0.65, 0.72)
+	hull_mat.albedo_color = hull_color
 	hull_mat.metallic = 0.6
 	hull_mat.roughness = 0.4
 	body.material_override = hull_mat
@@ -229,7 +324,7 @@ func _build_ship() -> ShipController:
 	nose.material_override = nose_mat
 	ship.add_child(nose)
 
-	# Player-ship body: collides with the environment (asteroids); enemy bolts
+	# Body: player_ship layer, collides with the environment (asteroids); bolts
 	# detect it via this layer.
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
@@ -252,12 +347,6 @@ func _build_ship() -> ShipController:
 	var cargo := CargoSystem.new()
 	ship.add_child(cargo)
 	ship.cargo = cargo
-
-	add_child(ship)
-	# Carry persisted damage into the run (repairing at the station restores it),
-	# but floor it so an unrepaired ship is never launched dead/unplayable.
-	ship.current_hull = ship.ship_def.hull_max * clampf(PlayerProfile.ship_hull_pct, 0.3, 1.0)
-	return ship
 
 func _build_camera(ship: ShipController) -> void:
 	var cam := ChaseCamera.new()
