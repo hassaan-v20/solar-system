@@ -32,6 +32,23 @@ a while. In co-op, anyone can harvest, so there's plenty to do together.
 
 ![build mode](build.png)
 
+## On the surface (first-person)
+
+**Right-click any planet** in space to land on it and drop into a first-person
+survival mode on its surface.
+
+![surface](surface.png)
+
+- **WASD** move, **mouse** look, **left click** attack, **Esc** return to space.
+- Creatures (critters, beasts, aliens) roam and attack — kill them for loot:
+  **hide, bone, crystal, alloy**.
+- **Craft** better gear with keys **1-4**: Alloy Blade and Plasma Blaster
+  (weapons), Hide and Plated Armour. Better weapons hit harder/farther; armour
+  reduces the damage you take.
+- Each planet type has its own ground and sky. Watch your health bar!
+
+This first-person mode is single-player for now (on-foot co-op is a future step).
+
 ## Run it
 
 ```bash
@@ -50,6 +67,7 @@ decade). Developed and tested on an AMD Radeon RX 6600 XT.
 | Click badges / bar | Switch mode or pick a body with the mouse |
 | `1` – `0`          | Pick body: Moon, Rocky, Ocean, Desert, Lava, Ice, Toxic, Sulfur, Gas, Star |
 | Left click         | Place selected body, or deflect a comet |
+| Right click planet | Land on it (first-person surface mode)  |
 | Drag mouse         | Orbit the camera                        |
 | Scroll wheel       | Zoom in / out                           |
 | `+` / `-`          | Speed up / slow down time               |
@@ -68,6 +86,8 @@ scene.py       renderer: planets, skybox, rings, comets, bloom pipeline
 camera.py      orbital camera + mouse-ray picking
 server.py      authoritative co-op server (websockets)
 netclient.py   client networking (background thread + snapshots)
+surface.py     first-person surface mode: creatures, loot, crafting
+surface_scene.py  first-person renderer (ground, sky, sprite creatures)
 hud.py         2D text/panel overlay (title, mode badges, hotbar, help)
 sprites.py     procedural galaxy / nebula sprite generation
 mesh.py        sphere / ring / quad geometry

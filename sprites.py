@@ -33,3 +33,28 @@ def generate_galaxy(size=256, seed=0, kind="spiral"):
     alpha = (b * 255).astype(np.uint8)
     white = np.full((size, size), 255, np.uint8)
     return np.stack([white, white, white, alpha], axis=-1)
+
+
+def generate_creature(size=128):
+    """A simple monster silhouette (row 0 = bottom). White, tinted in-shader."""
+    v = np.linspace(0.0, 1.0, size).reshape(-1, 1)   # 0 bottom -> 1 top
+    u = np.linspace(0.0, 1.0, size).reshape(1, -1)
+    body = ((u - 0.5) / 0.34) ** 2 + ((v - 0.34) / 0.32) ** 2 <= 1.0
+    head = ((u - 0.5) / 0.24) ** 2 + ((v - 0.74) / 0.24) ** 2 <= 1.0
+    legL = (np.abs(u - 0.40) < 0.07) & (v < 0.12)
+    legR = (np.abs(u - 0.60) < 0.07) & (v < 0.12)
+    mask = body | head | legL | legR
+    eyeL = ((u - 0.42) / 0.055) ** 2 + ((v - 0.77) / 0.06) ** 2 <= 1.0
+    eyeR = ((u - 0.58) / 0.055) ** 2 + ((v - 0.77) / 0.06) ** 2 <= 1.0
+    rgb = np.ones((size, size), np.float32)
+    rgb[eyeL | eyeR] = 0.10
+    a = np.broadcast_to(mask, (size, size)).astype(np.float32)
+    return np.stack([(rgb * 255).astype(np.uint8)] * 3 + [(a * 255).astype(np.uint8)], axis=-1)
+
+
+def generate_orb(size=64):
+    yy, xx = np.mgrid[-1:1:size * 1j, -1:1:size * 1j]
+    r = np.hypot(xx, yy)
+    rgb = np.clip(1.2 - r, 0.0, 1.0)
+    alpha = (r < 0.85).astype(np.float32)
+    return np.stack([(rgb * 255).astype(np.uint8)] * 3 + [(alpha * 255).astype(np.uint8)], axis=-1)

@@ -10,8 +10,12 @@ import moderngl
 from camera import Camera
 from scene import SolarSystem
 from hud import Hud
-from world import World, BODY_TYPES, has_save, save_game, load_game
+from world import World, BODY_TYPES, body_world_pos, has_save, save_game, load_game
 from netclient import NetClient
+from surface import Surface, RECIPE_ORDER, RECIPE_LABEL, RECIPES, WEAPONS, ARMORS, ITEM_ORDER, ITEM_COLOR, PLAYER_MAX_HP
+from surface_scene import SurfaceRenderer
+
+LOOK_SENS = 0.0026
 
 WINDOWED = (1280, 720)
 SERVER_PY = Path(__file__).parent / "server.py"
@@ -110,6 +114,31 @@ def pick_comet(camera, world, pos):
     return best
 
 
+def pick_body(camera, world, pos, t):
+    origin, d = camera.screen_ray(*pos)
+    best, best_t = None, 1e9
+    for b in world.bodies:
+        if not b.alive or b.special in ("sun", "star"):
+            continue
+        oc = np.array(body_world_pos(b, t), dtype="f8") - origin
+        tca = oc @ d
+        if tca < 0:
+            continue
+        if oc @ oc - tca * tca <= (b.radius + 0.4) ** 2 and tca < best_t:
+            best, best_t = b, tca
+    return best
+
+
+def planet_kind_from_body(b):
+    n = b.name.lower()
+    for k in ("ocean", "lava", "ice", "toxic", "sulfur", "desert"):
+        if k in n:
+            return k
+    if "earth" in n:
+        return "ocean"
+    return "rocky"
+
+
 def pick_entity(camera, world, pos, t):
     origin, d = camera.screen_ray(*pos)
     best, best_t = None, 1e9
@@ -155,6 +184,8 @@ def main():
     join_pw = ""
     host_pw = ""
     join_focus = 0          # 0 = address field, 1 = password field
+    surf = None
+    surf_renderer = None
     dragging = False
     moved = 0.0
     down_pos = last_pos = (0, 0)
@@ -187,6 +218,11 @@ def main():
                 if running:
                     sim_time += dt * speed
                 world.tick(dt, sim_time, running)
+        elif state == "surface":
+            keys = pygame.key.get_pressed()
+            fwd = (1 if keys[pygame.K_w] else 0) - (1 if keys[pygame.K_s] else 0)
+            strafe = (1 if keys[pygame.K_d] else 0) - (1 if keys[pygame.K_a] else 0)
+            surf.update(dt, fwd, strafe)
         else:
             title_time += dt * 0.3
             camera.yaw += dt * 3.0
@@ -232,12 +268,23 @@ def main():
                         host_pw += event.unicode
                     continue
 
+                if state == "surface":
+                    if event.key == pygame.K_ESCAPE:
+                        pygame.event.set_grab(False)
+                        pygame.mouse.set_visible(True)
+                        state = "playing"
+                    elif event.key in (pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4):
+                        idx = [pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4].index(event.key)
+                        surf.craft(RECIPE_ORDER[idx])
+                    continue
+
                 if event.key == pygame.K_F11:
                     fullscreen = not fullscreen
                     ctx, W, H = setup_display(fullscreen)
                     renderer = SolarSystem(ctx); renderer.resize(W, H)
                     hud = Hud(ctx); hud.resize(W, H)
                     camera.resize(W, H)
+                    surf_renderer = None
                 elif event.key == pygame.K_ESCAPE:
                     if state == "playing":
                         if net is not None:
@@ -277,9 +324,23 @@ def main():
                             running = not running
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
+                if state == "surface":
+                    if event.button == 1:
+                        surf.attack()
+                    continue
                 if event.button == 1:
                     dragging = True; moved = 0.0
                     down_pos = last_pos = event.pos
+                elif event.button == 3 and state == "playing":
+                    b = pick_body(camera, world, event.pos, sim_time)
+                    if b is not None:
+                        surf = Surface(planet_kind_from_body(b))
+                        if surf_renderer is None:
+                            surf_renderer = SurfaceRenderer(ctx, renderer.tex)
+                        pygame.event.set_grab(True)
+                        pygame.mouse.set_visible(False)
+                        pygame.mouse.get_rel()
+                        state = "surface"
                 elif event.button == 4:
                     camera.zoom(-4.0)
                 elif event.button == 5:
@@ -310,7 +371,10 @@ def main():
                                                          sim_time, W, H, net)
 
             elif event.type == pygame.MOUSEMOTION:
-                if dragging and state == "playing":
+                if state == "surface":
+                    surf.yaw += event.rel[0] * LOOK_SENS
+                    surf.pitch = max(-1.4, min(1.4, surf.pitch - event.rel[1] * LOOK_SENS))
+                elif dragging and state == "playing":
                     dx = event.pos[0] - last_pos[0]
                     dy = event.pos[1] - last_pos[1]
                     moved += abs(dx) + abs(dy)
@@ -341,6 +405,9 @@ def main():
             renderer.render(world, camera, sim_time, preview, avatars)
             draw_hud(hud, world, selected, speed, running, preview, mouse, show_help,
                      net, players, avatar_labels)
+        elif state == "surface":
+            surf_renderer.render(surf, W, H)
+            draw_surface_hud(hud, surf, W, H)
         elif state == "join":
             renderer.render(World("explore"), camera, title_time, None)
             draw_join(hud, W, H, join_text, join_pw, join_focus)
@@ -598,6 +665,65 @@ def _draw_help(hud, world, W, H):
     hud.text_center(W // 2, py + ph - 30,
                     "Survival tip: build near the Sun's habitable zone for more energy.",
                     15, (170, 180, 200), "body")
+
+
+def draw_surface_hud(hud, surf, W, H):
+    hud.begin()
+    cx, cy = W // 2, H // 2
+    ch = (0.9, 0.95, 1.0, 0.85)
+    hud.panel(cx - 1, cy - 10, 2, 20, ch)
+    hud.panel(cx - 10, cy - 1, 20, 2, ch)
+
+    hud.text(14, 12, "WASD move   ·   mouse look   ·   click attack   ·   1-4 craft   ·   Esc leave",
+             15, (165, 175, 195), "body")
+
+    # Health card.
+    hud.border_panel(14, H - 96, 320, 82)
+    hud.text(26, H - 90, "HEALTH", 15, (255, 185, 175), "ui")
+    frac = max(0.0, min(1.0, surf.hp / PLAYER_MAX_HP))
+    hud.panel(26, H - 66, 296, 16, (0.12, 0.05, 0.05, 0.9))
+    hud.panel(26, H - 66, int(296 * frac), 16,
+              (0.9, 0.25, 0.25, 0.95) if frac < 0.4 else (0.3, 0.85, 0.4, 0.95))
+    hud.text(30, H - 65, f"{int(surf.hp)}/{int(PLAYER_MAX_HP)}", 13, (255, 255, 255), "body")
+    hud.text(26, H - 42,
+             f"{WEAPONS[surf.weapon]['name']}   |   {ARMORS[surf.armor]['name']}   |   Kills {surf.kills}",
+             14, (210, 215, 225), "body")
+
+    # Inventory strip (bottom-centre).
+    n = len(ITEM_ORDER)
+    sw, gap = 70, 8
+    x0 = (W - (n * sw + (n - 1) * gap)) // 2
+    y = H - 64
+    for i, item in enumerate(ITEM_ORDER):
+        x = x0 + i * (sw + gap)
+        hud.border_panel(x, y, sw, 50, (0.05, 0.06, 0.10, 0.82), (0.3, 0.34, 0.5, 0.6), 2)
+        c = ITEM_COLOR[item]
+        hud.panel(x + 8, y + 7, sw - 16, 20, (c[0], c[1], c[2], 1.0))
+        hud.text_center(x + sw // 2, y + 31, f"{item} {surf.inv.get(item, 0)}", 11, (220, 225, 235), "body")
+
+    # Crafting list (bottom-right).
+    pw, ph = 300, 24 * len(RECIPE_ORDER) + 36
+    x, cy2 = W - pw - 14, H - ph - 14
+    hud.border_panel(x, cy2, pw, ph, (0.04, 0.05, 0.09, 0.82), (0.4, 0.46, 0.65, 0.6), 2)
+    hud.text(x + 14, cy2 + 8, "CRAFT  (press 1-4)", 14, (255, 230, 150), "ui")
+    yy = cy2 + 34
+    for i, key in enumerate(RECIPE_ORDER):
+        can = surf.can_craft(key)
+        cost = "  ".join(f"{k}x{v}" for k, v in RECIPES[key][1].items())
+        col = (150, 255, 180) if can else (150, 155, 165)
+        hud.text(x + 14, yy, f"[{i+1}] {RECIPE_LABEL[key]}", 13, col, "body")
+        hud.text(x + pw - 96, yy, cost, 11, (175, 182, 198), "body")
+        yy += 24
+
+    if surf.message_t > 0 and surf.message:
+        hud.text_center(W // 2, 118, surf.message, 24, (255, 210, 170), "ui")
+
+    if surf.dead:
+        hud.panel(0, 0, W, H, (0.35, 0.02, 0.02, 0.4))
+        hud.text_center(W // 2, H // 2 - 30, "YOU DIED", 60, (255, 120, 110), "title")
+        hud.text_center(W // 2, H // 2 + 40, "Press Esc to return to space", 22, (235, 200, 200), "ui")
+
+    hud.end()
 
 
 if __name__ == "__main__":
