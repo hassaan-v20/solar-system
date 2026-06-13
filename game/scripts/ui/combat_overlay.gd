@@ -33,10 +33,12 @@ func _draw() -> void:
 	if danger > 0.01:
 		draw_rect(Rect2(Vector2.ZERO, vp), Color(0.75, 0.05, 0.05, clampf(danger, 0.0, 0.5)))
 
-	# Crosshair.
-	var col := Color(0.7, 0.95, 1.0, 0.85)
+	# Crosshair: ring + centre dot + four ticks.
+	var col := Color(0.7, 0.95, 1.0, 0.9)
+	draw_arc(c, 14.0, 0.0, TAU, 40, col, 1.6, true)
+	draw_circle(c, 1.8, col)
 	for d in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
-		draw_line(c + d * 5.0, c + d * 13.0, col, 2.0)
+		draw_line(c + d * 19.0, c + d * 27.0, col, 2.0)
 
 	# Hitmarker.
 	if _hit_t > 0.0:
@@ -57,16 +59,40 @@ func _draw() -> void:
 		var sp := camera.unproject_position(wp)
 		var is_boss: bool = ("enemy_def" in e3) and e3.enemy_def != null and e3.enemy_def.is_boss
 
+		var ecol := Color(1.0, 0.5, 0.4, 0.95) if is_boss else Color(1.0, 0.7, 0.4, 0.85)
 		if not behind and rect.has_point(sp):
 			_draw_bracket(sp, is_boss)
 			_draw_enemy_health(e3, sp, is_boss)
 		else:
-			var dir := sp - c
-			if behind:
-				dir = -dir
-			if dir.length() < 1.0:
-				dir = Vector2(0, -1)
-			_draw_arrow(c, dir.normalized(), vp, is_boss)
+			_draw_arrow(c, _edge_dir(sp, c, behind), vp, ecol)
+
+	# Objective markers (station, jump point) in cyan.
+	var ocol := Color(0.4, 0.9, 1.0, 0.95)
+	for o in get_tree().get_nodes_in_group("objective"):
+		var o3 := o as Node3D
+		if o3 == null:
+			continue
+		var wp := o3.global_position
+		var behind := camera.is_position_behind(wp)
+		var sp := camera.unproject_position(wp)
+		if not behind and rect.has_point(sp):
+			_draw_diamond(sp, ocol)
+		else:
+			_draw_arrow(c, _edge_dir(sp, c, behind), vp, ocol)
+
+func _edge_dir(sp: Vector2, c: Vector2, behind: bool) -> Vector2:
+	var dir := sp - c
+	if behind:
+		dir = -dir
+	if dir.length() < 1.0:
+		dir = Vector2(0, -1)
+	return dir.normalized()
+
+func _draw_diamond(p: Vector2, col: Color) -> void:
+	var r := 9.0
+	var pts := PackedVector2Array([p + Vector2(0, -r), p + Vector2(r, 0), p + Vector2(0, r), p + Vector2(-r, 0)])
+	for i in 4:
+		draw_line(pts[i], pts[(i + 1) % 4], col, 2.0)
 
 func _draw_bracket(p: Vector2, boss: bool) -> void:
 	var s := 26.0 if boss else 15.0
@@ -85,7 +111,7 @@ func _draw_enemy_health(e: Node3D, p: Vector2, boss: bool) -> void:
 	draw_rect(Rect2(p.x - w * 0.5, y, w, 4.0), Color(0.1, 0.0, 0.0, 0.8))
 	draw_rect(Rect2(p.x - w * 0.5, y, w * frac, 4.0), Color(1.0, 0.35, 0.3, 0.95))
 
-func _draw_arrow(c: Vector2, dir: Vector2, vp: Vector2, boss: bool) -> void:
+func _draw_arrow(c: Vector2, dir: Vector2, vp: Vector2, col: Color) -> void:
 	var m := 70.0
 	var t := INF
 	if dir.x > 0.001:
@@ -99,7 +125,6 @@ func _draw_arrow(c: Vector2, dir: Vector2, vp: Vector2, boss: bool) -> void:
 	if t == INF:
 		return
 	var pos := c + dir * t
-	var col := Color(1.0, 0.5, 0.4, 0.95) if boss else Color(1.0, 0.7, 0.4, 0.85)
 	var perp := Vector2(-dir.y, dir.x)
 	var pts := PackedVector2Array([pos + dir * 12.0, pos - dir * 6.0 + perp * 8.0, pos - dir * 6.0 - perp * 8.0])
 	draw_colored_polygon(pts, col)

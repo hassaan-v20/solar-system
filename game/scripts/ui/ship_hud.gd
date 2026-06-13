@@ -18,6 +18,8 @@ var _dim: ColorRect
 var _dead: Label
 var _banner: Label
 var _banner_t: float = 0.0
+var _objective: Label
+var _xtimer: Label
 
 func _ready() -> void:
 	var root := Control.new()
@@ -48,7 +50,27 @@ func _ready() -> void:
 	_banner.add_theme_font_size_override("font_size", 40)
 	_banner.modulate = Color(1, 1, 1, 0)
 	root.add_child(_banner)
+
+	_objective = Label.new()
+	_objective.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	_objective.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_objective.offset_top = 150
+	_objective.add_theme_font_size_override("font_size", 22)
+	_objective.modulate = Color(0.7, 0.95, 1.0)
+	root.add_child(_objective)
+
+	_xtimer = Label.new()
+	_xtimer.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	_xtimer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_xtimer.offset_top = 50
+	_xtimer.add_theme_font_size_override("font_size", 34)
+	_xtimer.visible = false
+	root.add_child(_xtimer)
+
 	EventBus.wave_started.connect(_on_wave)
+	EventBus.objective_updated.connect(func(t): _objective.text = t)
+	EventBus.extraction_timer_changed.connect(_on_xtimer)
+	EventBus.mission_state_changed.connect(_on_mstate)
 
 	_heat_bg = ColorRect.new()
 	_heat_bg.color = Color(0.1, 0.1, 0.14, 0.85)
@@ -95,9 +117,30 @@ func set_missiles(ammo: int, maximum: int) -> void:
 		_missiles_lbl.text = "MISSILE %d / %d" % [ammo, maximum]
 
 func _on_wave(number: int, is_boss: bool) -> void:
-	_banner.text = "⚠  BOSS WAVE %d" % number if is_boss else "WAVE %d" % number
-	_banner.modulate = Color(1.0, 0.5, 0.4) if is_boss else Color(0.7, 0.9, 1.0)
-	_banner_t = 2.5
+	_show_banner("⚠  BOSS WAVE %d" % number if is_boss else "WAVE %d" % number,
+				 Color(1.0, 0.5, 0.4) if is_boss else Color(0.7, 0.9, 1.0), 2.5)
+
+func _show_banner(text: String, col: Color, dur: float) -> void:
+	_banner.text = text
+	_banner.modulate = col
+	_banner_t = dur
+
+func _on_xtimer(seconds: float) -> void:
+	_xtimer.visible = true
+	_xtimer.text = "EXTRACT IN  %d" % int(ceil(seconds))
+	_xtimer.modulate = Color(1.0, 0.4, 0.35) if seconds < 15.0 else Color(1.0, 0.85, 0.4)
+
+func _on_mstate(state: String) -> void:
+	if state == "complete":
+		_xtimer.visible = false
+		_objective.text = ""
+		_show_banner("MISSION COMPLETE", Color(0.5, 1.0, 0.6), 6.0)
+	elif state == "failed":
+		_xtimer.visible = false
+		_objective.text = ""
+		_show_banner("MISSION FAILED", Color(1.0, 0.45, 0.4), 6.0)
+	elif state != "extract":
+		_xtimer.visible = false
 
 func show_destroyed() -> void:
 	_dead.visible = true

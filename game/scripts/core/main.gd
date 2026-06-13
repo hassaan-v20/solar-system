@@ -36,6 +36,14 @@ func _ready() -> void:
 	_build_asteroids()
 	EventBus.ship_destroyed.connect(_on_ship_destroyed)
 	_spawn_wave()
+	_start_mission()
+
+func _start_mission() -> void:
+	var mm := MissionManager.new()
+	mm.world = self
+	mm.ship = _ship
+	add_child(mm)
+	mm.begin()
 
 func _process(delta: float) -> void:
 	for a in _asteroids:
@@ -126,38 +134,55 @@ func _build_ship() -> ShipController:
 	if def is ShipDef:
 		ship.ship_def = def
 
-	var body := MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = Vector3(2.2, 0.7, 3.4)
-	body.mesh = box
-	var hull_mat := StandardMaterial3D.new()
-	hull_mat.albedo_color = Color(0.58, 0.63, 0.72)
-	hull_mat.metallic = 0.7
-	hull_mat.roughness = 0.35
-	body.material_override = hull_mat
-	ship.add_child(body)
+	var hull := StandardMaterial3D.new()
+	hull.albedo_color = Color(0.55, 0.60, 0.70)
+	hull.metallic = 0.75
+	hull.roughness = 0.3
+	var accent := StandardMaterial3D.new()
+	accent.albedo_color = Color(0.30, 0.55, 0.85)
+	accent.metallic = 0.6
+	accent.roughness = 0.4
 
-	var nose := MeshInstance3D.new()
-	var nbox := BoxMesh.new()
-	nbox.size = Vector3(0.5, 0.5, 1.0)
-	nose.mesh = nbox
-	nose.position = Vector3(0, 0, -2.0)
-	var nose_mat := StandardMaterial3D.new()
-	nose_mat.albedo_color = Color(0.4, 0.7, 1.0)
-	nose_mat.emission_enabled = true
-	nose_mat.emission = Color(0.3, 0.7, 1.0)
-	nose_mat.emission_energy_multiplier = 2.5
-	nose.material_override = nose_mat
-	ship.add_child(nose)
+	# Fuselage.
+	var fus := BoxMesh.new()
+	fus.size = Vector3(1.0, 0.55, 3.0)
+	_part(ship, fus, Vector3(0, 0, 0.1), Vector3.ZERO, hull)
+	# Tapered nose (prism pointing forward).
+	var nose := PrismMesh.new()
+	nose.size = Vector3(1.0, 0.55, 1.8)
+	_part(ship, nose, Vector3(0, 0, -2.3), Vector3(90, 0, 0), hull)
+	# Swept wings.
+	var wing := BoxMesh.new()
+	wing.size = Vector3(2.4, 0.12, 1.3)
+	_part(ship, wing, Vector3(-1.35, 0, 0.5), Vector3(0, -18, -6), hull)
+	_part(ship, wing, Vector3(1.35, 0, 0.5), Vector3(0, 18, 6), hull)
+	# Tail fin.
+	var fin := BoxMesh.new()
+	fin.size = Vector3(0.12, 1.0, 1.0)
+	_part(ship, fin, Vector3(0, 0.55, 1.4), Vector3(-18, 0, 0), hull)
+	# Cockpit canopy (glowing accent).
+	var cockpit := BoxMesh.new()
+	cockpit.size = Vector3(0.5, 0.32, 1.1)
+	var cp_mat := StandardMaterial3D.new()
+	cp_mat.albedo_color = Color(0.4, 0.75, 1.0)
+	cp_mat.emission_enabled = true
+	cp_mat.emission = Color(0.4, 0.8, 1.0)
+	cp_mat.emission_energy_multiplier = 2.0
+	_part(ship, cockpit, Vector3(0, 0.36, -0.7), Vector3.ZERO, cp_mat)
+	# Engine nacelles.
+	var nac := BoxMesh.new()
+	nac.size = Vector3(0.45, 0.45, 1.4)
+	_part(ship, nac, Vector3(-0.55, 0, 1.5), Vector3.ZERO, accent)
+	_part(ship, nac, Vector3(0.55, 0, 1.5), Vector3.ZERO, accent)
 
 	# Engine glow at the back; pulses with thrust/boost (driven in _process).
 	var engine := MeshInstance3D.new()
 	var em := SphereMesh.new()
-	em.radius = 0.45
-	em.height = 0.9
+	em.radius = 0.4
+	em.height = 0.8
 	engine.mesh = em
-	engine.position = Vector3(0, 0, 1.9)
-	engine.scale = Vector3(1.0, 0.7, 1.6)
+	engine.position = Vector3(0, 0, 2.2)
+	engine.scale = Vector3(1.6, 0.7, 1.4)
 	_engine_mat = StandardMaterial3D.new()
 	_engine_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_engine_mat.albedo_color = Color(0.5, 0.8, 1.0)
@@ -169,12 +194,20 @@ func _build_ship() -> ShipController:
 
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
-	shape.size = Vector3(2.2, 0.7, 3.4)
+	shape.size = Vector3(2.6, 0.7, 3.6)
 	col.shape = shape
 	ship.add_child(col)
 
 	add_child(ship)
 	return ship
+
+func _part(parent: Node3D, mesh: Mesh, pos: Vector3, rot_deg: Vector3, mat: Material) -> void:
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.position = pos
+	mi.rotation_degrees = rot_deg
+	mi.material_override = mat
+	parent.add_child(mi)
 
 func _build_weapon(ship: ShipController) -> void:
 	var w := WeaponController.new()

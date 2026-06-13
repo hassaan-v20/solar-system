@@ -19,8 +19,16 @@ Fly the **Wayfarer** and fight escalating waves in a dogfight that actually read
   glow, explosions, and **heal/shield pickups** dropped by enemies.
 - Ship damage (shields → hull, with regen), death/respawn, scoring.
 
-Visuals: an infinite **starfield + nebula sky** (no congested near stars), depth
-fog, and spinning asteroids. Still placeholder primitives — feel first.
+Visuals: ships are now **modelled from primitives** (fuselage, swept wings,
+cockpit, engines — not boxes), plus an infinite **starfield + nebula sky**, depth
+fog, and spinning asteroids.
+
+## In progress: Milestone 3 — the raid loop
+
+A first mission state machine: **fly to the derelict station → hack its data core
+(hold position) → extract at the jump point before the timer runs out**, all while
+fighting. Objective text, an extraction countdown, and cyan objective markers
+(with off-screen arrows) guide you; mission complete/failed banners close it out.
 
 ## Run it
 
@@ -57,5 +65,5 @@ configs), `assets/` (art/audio).
 
 ## Next milestones
 
-✅ M2 combat (laser, projectiles, drone AI, damage) → **M3** mission FSM (dock,
-hack, extract) → M4 station + economy + persistence → M5 co-op multiplayer.
+✅ M2 combat → 🔧 **M3** mission FSM (dock, hack, extract — first pass in) → M4
+station + economy + persistence → M5 co-op multiplayer.

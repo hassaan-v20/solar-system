@@ -80,27 +80,59 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 
 func _build_visual() -> void:
-	var body := MeshInstance3D.new()
-	var prism := PrismMesh.new()
 	var s := enemy_def.body_size
-	prism.size = Vector3(s, s * 0.6, s)
-	body.mesh = prism
-	body.rotation_degrees = Vector3(-90, 0, 0)
 	_body_mat = StandardMaterial3D.new()
 	_body_mat.albedo_color = enemy_def.body_color
-	_body_mat.metallic = 0.5
-	_body_mat.roughness = 0.5
+	_body_mat.metallic = 0.55
+	_body_mat.roughness = 0.45
 	_body_mat.emission_enabled = true
 	_body_mat.emission = enemy_def.body_color
 	_body_mat.emission_energy_multiplier = 1.6
-	body.material_override = _body_mat
-	add_child(body)
+	var core_mat := StandardMaterial3D.new()
+	core_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	core_mat.albedo_color = Color(1.0, 0.9, 0.5)
+	core_mat.emission_enabled = true
+	core_mat.emission = Color(1.0, 0.7, 0.3)
+	core_mat.emission_energy_multiplier = 4.0
+
+	var rush := enemy_def.behavior == "rush"
+	# Body: a sleek dart for rushers, a chunkier hull for the rest.
+	var body := BoxMesh.new()
+	body.size = Vector3(s * 0.5, s * 0.4, s * 1.5) if rush else Vector3(s * 0.95, s * 0.5, s * 0.95)
+	_epart(body, Vector3.ZERO, Vector3.ZERO, _body_mat)
+	# Forward nose.
+	var nose := PrismMesh.new()
+	nose.size = Vector3(s * 0.5, s * 0.4, s * 0.8)
+	_epart(nose, Vector3(0, 0, -s * 0.85), Vector3(90, 0, 0), _body_mat)
+	# Swept fins.
+	var fin := BoxMesh.new()
+	fin.size = Vector3(s * 1.3, s * 0.08, s * 0.55)
+	_epart(fin, Vector3(-s * 0.55, 0, s * 0.2), Vector3(0, -20, 0), _body_mat)
+	_epart(fin, Vector3(s * 0.55, 0, s * 0.2), Vector3(0, 20, 0), _body_mat)
+	# Glowing core / eye.
+	var core := SphereMesh.new()
+	core.radius = s * 0.2
+	core.height = s * 0.4
+	_epart(core, Vector3(0, 0, -s * 0.15), Vector3.ZERO, core_mat)
+	if enemy_def.is_boss:
+		var pod := BoxMesh.new()
+		pod.size = Vector3(s * 0.4, s * 0.5, s * 1.2)
+		_epart(pod, Vector3(-s * 0.7, 0, s * 0.1), Vector3.ZERO, _body_mat)
+		_epart(pod, Vector3(s * 0.7, 0, s * 0.1), Vector3.ZERO, _body_mat)
 
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
-	shape.size = Vector3(s, s * 0.7, s)
+	shape.size = Vector3(s * 1.3, s * 0.7, s * 1.4)
 	col.shape = shape
 	add_child(col)
+
+func _epart(mesh: Mesh, pos: Vector3, rot_deg: Vector3, mat: Material) -> void:
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.position = pos
+	mi.rotation_degrees = rot_deg
+	mi.material_override = mat
+	add_child(mi)
 
 func _build_weapon() -> void:
 	_weapon = WeaponController.new()
