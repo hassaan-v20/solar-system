@@ -289,6 +289,17 @@ func _open_panel(k: Dictionary) -> void:
 	close.pressed.connect(_close_panel)
 	box.add_child(close)
 
+	_focus_first_button(box)  # so a controller / keyboard can drive the panel (✕ selects)
+
+func _focus_first_button(node: Node) -> bool:
+	for c in node.get_children():
+		if c is Button and not (c as Button).disabled:
+			(c as Button).grab_focus()
+			return true
+		if _focus_first_button(c):
+			return true
+	return false
+
 func _close_panel() -> void:
 	if _panel != null:
 		_panel.queue_free()

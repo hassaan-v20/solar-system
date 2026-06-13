@@ -19,6 +19,9 @@ GameState="*res://scripts/core/game_state.gd"
 
 window/size/viewport_width=1600
 window/size/viewport_height=900
+; Launch straight into (borderless) fullscreen. F11 / controller Create button
+; toggles back to a window — see GameState._setup_fullscreen_toggle().
+window/size/mode=3
 
 [gui]
 

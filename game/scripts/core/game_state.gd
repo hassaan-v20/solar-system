@@ -30,6 +30,38 @@ var last_result := {}        # {name, success, reward}
 
 func _ready() -> void:
 	load_profile()
+	_setup_fullscreen_toggle()
+	_setup_ui_pad()
+
+# Godot's default ui_up/down/left/right include joypad mappings, but ui_accept /
+# ui_cancel do NOT — so menus navigate with the D-pad yet ✕ won't select. Add the
+# DualSense face buttons here (globally, before any scene) to fix that.
+func _setup_ui_pad() -> void:
+	var cross := InputEventJoypadButton.new()
+	cross.button_index = JOY_BUTTON_A           # ✕ — confirm/select
+	InputMap.action_add_event("ui_accept", cross)
+	var circle := InputEventJoypadButton.new()
+	circle.button_index = JOY_BUTTON_B          # ○ — back/cancel
+	InputMap.action_add_event("ui_cancel", circle)
+
+# Global fullscreen toggle (works on title, station, and in-raid). The game
+# launches fullscreen via project.godot; this lets you drop back to a window.
+func _setup_fullscreen_toggle() -> void:
+	if not InputMap.has_action("toggle_fullscreen"):
+		InputMap.add_action("toggle_fullscreen")
+	var key := InputEventKey.new()
+	key.physical_keycode = KEY_F11
+	InputMap.action_add_event("toggle_fullscreen", key)
+	var pad := InputEventJoypadButton.new()
+	pad.button_index = JOY_BUTTON_BACK          # DualSense Create / Share button
+	InputMap.action_add_event("toggle_fullscreen", pad)
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("toggle_fullscreen"):
+		var is_fs := DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
+		DisplayServer.window_set_mode(
+			DisplayServer.WINDOW_MODE_WINDOWED if is_fs else DisplayServer.WINDOW_MODE_FULLSCREEN)
+		get_viewport().set_input_as_handled()
 
 func cost(key: String) -> int:
 	return int(UPGRADES[key].base * pow(1.6, upgrades[key]))

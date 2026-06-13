@@ -180,6 +180,7 @@ func _build_ui() -> void:
 	var quit := _button("QUIT")
 	quit.pressed.connect(func(): get_tree().quit())
 	box.add_child(quit)
+	play.grab_focus()  # so a controller / keyboard can drive the menu immediately
 
 	var info := Label.new()
 	info.text = "Credits %d    ·    Raids %d (won %d)" % [GameState.credits, GameState.stats.raids, GameState.stats.wins]

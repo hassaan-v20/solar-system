@@ -68,11 +68,15 @@ func _regen(delta: float) -> void:
 		EventBus.ship_shield_changed.emit(current_shield, ship_def.shield_max)
 
 func _steer(delta: float) -> void:
-	# Mouse steers the nose (yaw + pitch); A/D roll the hull.
+	# Mouse and the right stick both steer the nose (yaw + pitch); A/D or L1/R1 roll.
 	var sens := 0.0022 * ship_def.turn_speed
 	rotate_object_local(Vector3.UP, -_mouse_delta.x * sens)
 	rotate_object_local(Vector3.RIGHT, -_mouse_delta.y * sens)
 	_mouse_delta = Vector2.ZERO
+	# Right stick: continuous analog look, scaled by the same turn_speed as the mouse.
+	var look := Input.get_vector("look_left", "look_right", "look_up", "look_down")
+	rotate_object_local(Vector3.UP, -look.x * ship_def.turn_speed * delta)
+	rotate_object_local(Vector3.RIGHT, -look.y * ship_def.turn_speed * delta)
 	var roll_input := Input.get_axis("roll_right", "roll_left")
 	rotate_object_local(Vector3.FORWARD, roll_input * ship_def.roll_speed * delta)
 
