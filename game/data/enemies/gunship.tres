@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="EnemyDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/enemy_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+enemy_id = "gunship"
+display_name = "Gunship"
+hull_max = 190.0
+move_speed = 18.0
+accel = 14.0
+preferred_range = 95.0
+aggro_range = 380.0
+damage = 22.0
+fire_rate = 0.7
+projectile_speed = 150.0
+score = 260
+body_color = Color(0.95, 0.5, 0.2, 1.0)
+behavior = "orbit"
+contact_damage = 0.0
+body_size = 3.6
+is_boss = false
+drop_chance = 0.42

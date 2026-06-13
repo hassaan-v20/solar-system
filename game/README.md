@@ -7,13 +7,20 @@ Design: [`../docs/GDD.md`](../docs/GDD.md) · Tech stack:
 > The Python/ModernGL game in the repo root is the legacy prototype, kept for
 > reference. New work happens here.
 
-## Current state: Milestone 2 — combat
+## Current state: Milestone 2 — combat (polished)
 
-Fly the **Wayfarer** through a sector and fight waves of enemy drones. Adds a
-laser (with heat/overheat), visible energy bolts, drone AI that seeks and shoots,
-a ship damage system (shields → hull, with regen), and death/respawn. Visuals
-upgraded: an infinite **starfield + nebula sky** (no more congested near stars),
-depth fog, engine glow, and spinning asteroids. Still placeholder primitives.
+Fly the **Wayfarer** and fight escalating waves in a dogfight that actually reads:
+- **Laser** (heat/overheat) + **homing missiles** (right-click / F, limited regen ammo).
+- **Three enemy types** — light drones (shooters), **interceptors** (kamikaze rush),
+  **gunships** (tanky), plus a **boss Dreadnought every 5th wave** with a health bar.
+- **Combat overlay**: crosshair, hitmarkers, **off-screen enemy arrows**, target
+  brackets + enemy health bars, damage vignette.
+- **Juice**: procedural sound (lasers, hits, explosions), **camera shake**, engine
+  glow, explosions, and **heal/shield pickups** dropped by enemies.
+- Ship damage (shields → hull, with regen), death/respawn, scoring.
+
+Visuals: an infinite **starfield + nebula sky** (no congested near stars), depth
+fog, and spinning asteroids. Still placeholder primitives — feel first.
 
 ## Run it
 
@@ -38,6 +45,7 @@ Or open the Godot editor, **Import** → select `game/project.godot`, then press
 | `Shift` | Boost |
 | `Ctrl` | Brake |
 | `Space` / Left Mouse | Fire laser |
+| Right Mouse / `F` | Fire homing missile |
 | `Esc` | Toggle mouse capture |
 | `F8` | Quit |
 

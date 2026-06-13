@@ -14,3 +14,9 @@ extends Resource
 @export var projectile_speed: float = 140.0
 @export var score: int = 100
 @export var body_color: Color = Color(0.9, 0.35, 0.30)
+
+@export_enum("orbit", "rush") var behavior: String = "orbit"
+@export var contact_damage: float = 0.0        # rush/kamikaze impact damage
+@export var body_size: float = 2.4
+@export var is_boss: bool = false
+@export var drop_chance: float = 0.22          # chance to drop a pickup on death

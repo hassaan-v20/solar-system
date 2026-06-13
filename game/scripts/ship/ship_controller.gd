@@ -38,10 +38,19 @@ func take_damage(amount: float) -> void:
 	current_hull -= (amount - to_shield)
 	EventBus.ship_shield_changed.emit(current_shield, ship_def.shield_max)
 	EventBus.ship_hull_changed.emit(current_hull, ship_def.hull_max)
+	EventBus.player_hit.emit()
 	if current_hull <= 0.0:
 		current_hull = 0.0
 		is_dead = true
 		EventBus.ship_destroyed.emit()
+
+func heal(amount: float, kind: String) -> void:
+	if kind == "hull":
+		current_hull = minf(ship_def.hull_max, current_hull + amount)
+		EventBus.ship_hull_changed.emit(current_hull, ship_def.hull_max)
+	else:
+		current_shield = minf(ship_def.shield_max, current_shield + amount)
+		EventBus.ship_shield_changed.emit(current_shield, ship_def.shield_max)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:

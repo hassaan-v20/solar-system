@@ -10,12 +10,14 @@ var _hull: Label
 var _shield: Label
 var _speed: Label
 var _boost: Label
+var _missiles_lbl: Label
 var _combat: Label
-var _cross: Label
 var _heat_bg: ColorRect
 var _heat_fill: ColorRect
 var _dim: ColorRect
 var _dead: Label
+var _banner: Label
+var _banner_t: float = 0.0
 
 func _ready() -> void:
 	var root := Control.new()
@@ -30,6 +32,7 @@ func _ready() -> void:
 	_shield = _make_label(panel)
 	_speed = _make_label(panel)
 	_boost = _make_label(panel)
+	_missiles_lbl = _make_label(panel)
 
 	_combat = Label.new()
 	_combat.set_anchors_preset(Control.PRESET_TOP_WIDE)
@@ -38,14 +41,14 @@ func _ready() -> void:
 	_combat.offset_top = 24
 	root.add_child(_combat)
 
-	_cross = Label.new()
-	_cross.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_cross.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_cross.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_cross.add_theme_font_size_override("font_size", 26)
-	_cross.modulate = Color(1, 1, 1, 0.7)
-	_cross.text = "+"
-	root.add_child(_cross)
+	_banner = Label.new()
+	_banner.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_banner.offset_top = 90
+	_banner.add_theme_font_size_override("font_size", 40)
+	_banner.modulate = Color(1, 1, 1, 0)
+	root.add_child(_banner)
+	EventBus.wave_started.connect(_on_wave)
 
 	_heat_bg = ColorRect.new()
 	_heat_bg.color = Color(0.1, 0.1, 0.14, 0.85)
@@ -87,6 +90,15 @@ func set_combat(kills: int, enemies: int, score: int, wave: int) -> void:
 	if _combat != null:
 		_combat.text = "WAVE %d    ENEMIES %d    KILLS %d    SCORE %d" % [wave, enemies, kills, score]
 
+func set_missiles(ammo: int, maximum: int) -> void:
+	if _missiles_lbl != null:
+		_missiles_lbl.text = "MISSILE %d / %d" % [ammo, maximum]
+
+func _on_wave(number: int, is_boss: bool) -> void:
+	_banner.text = "⚠  BOSS WAVE %d" % number if is_boss else "WAVE %d" % number
+	_banner.modulate = Color(1.0, 0.5, 0.4) if is_boss else Color(0.7, 0.9, 1.0)
+	_banner_t = 2.5
+
 func show_destroyed() -> void:
 	_dead.visible = true
 	_dim.color = Color(0.3, 0.0, 0.0, 0.35)
@@ -96,6 +108,10 @@ func hide_destroyed() -> void:
 	_dim.color = Color(0.3, 0.0, 0.0, 0.0)
 
 func _process(_delta: float) -> void:
+	if _banner_t > 0.0:
+		_banner_t -= _delta
+		var a := clampf(_banner_t / 0.6, 0.0, 1.0)
+		_banner.modulate.a = a
 	if ship != null and ship.ship_def != null:
 		_hull.text = "HULL    %d / %d" % [int(ship.current_hull), int(ship.ship_def.hull_max)]
 		_shield.text = "SHIELD  %d / %d" % [int(ship.current_shield), int(ship.ship_def.shield_max)]

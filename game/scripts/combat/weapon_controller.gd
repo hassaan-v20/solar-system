@@ -52,6 +52,7 @@ func _try_fire(dir: Vector3) -> void:
 	world.add_child(p)
 	var origin := get_parent() as Node3D
 	p.global_position = origin.global_position + origin.global_transform.basis * muzzle_offset
+	EventBus.shot_fired.emit(team)
 
 func heat_fraction() -> float:
 	return heat / maxf(1.0, weapon_def.max_heat)

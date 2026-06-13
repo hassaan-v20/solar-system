@@ -9,6 +9,7 @@ const ASTEROID_COUNT := 120
 var _rng := RandomNumberGenerator.new()
 var _ship: ShipController
 var _hud: ShipHUD
+var _cam: ChaseCamera
 var _engine_mat: StandardMaterial3D
 var _asteroids: Array = []        # [{node, axis, speed}]
 var _enemies: int = 0
@@ -16,15 +17,22 @@ var _kills: int = 0
 var _score: int = 0
 var _wave: int = 0
 
+const MISSILE_MAX := 6
+var _missiles: int = MISSILE_MAX
+var _missile_cd: float = 0.0
+var _missile_regen: float = 0.0
+
 func _ready() -> void:
 	_rng.randomize()
 	_setup_input()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	add_child(Sfx.new())
 	_build_environment()
 	_ship = _build_ship()
 	_build_weapon(_ship)
 	_build_camera(_ship)
 	_build_hud(_ship)
+	_build_overlay()
 	_build_asteroids()
 	EventBus.ship_destroyed.connect(_on_ship_destroyed)
 	_spawn_wave()
@@ -35,12 +43,22 @@ func _process(delta: float) -> void:
 	if _engine_mat != null and is_instance_valid(_ship):
 		var f := clampf(_ship.get_speed() / _ship.ship_def.max_speed, 0.0, 1.0)
 		_engine_mat.emission_energy_multiplier = 1.4 + f * 3.5 + (3.0 if _ship.is_boosting else 0.0)
+	_missile_cd = maxf(0.0, _missile_cd - delta)
+	if _missiles < MISSILE_MAX:
+		_missile_regen += delta
+		if _missile_regen >= 3.5:
+			_missile_regen = 0.0
+			_missiles += 1
+	if _hud != null:
+		_hud.set_missiles(_missiles, MISSILE_MAX)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("toggle_mouse"):
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED else Input.MOUSE_MODE_CAPTURED
 	elif event.is_action_pressed("quit_game"):
 		get_tree().quit()
+	elif event.is_action_pressed("fire_secondary"):
+		_fire_missile()
 
 # ── input ─────────────────────────────────────────────────────────────────────
 func _setup_input() -> void:
@@ -59,10 +77,19 @@ func _setup_input() -> void:
 			var ev := InputEventKey.new()
 			ev.physical_keycode = key
 			InputMap.action_add_event(action, ev)
-	# Left mouse also fires.
+	# Left mouse also fires the laser.
 	var mb := InputEventMouseButton.new()
 	mb.button_index = MOUSE_BUTTON_LEFT
 	InputMap.action_add_event("fire", mb)
+	# Secondary fire (homing missile): right mouse or F.
+	if not InputMap.has_action("fire_secondary"):
+		InputMap.add_action("fire_secondary")
+	var rmb := InputEventMouseButton.new()
+	rmb.button_index = MOUSE_BUTTON_RIGHT
+	InputMap.action_add_event("fire_secondary", rmb)
+	var keyf := InputEventKey.new()
+	keyf.physical_keycode = KEY_F
+	InputMap.action_add_event("fire_secondary", keyf)
 
 # ── world ─────────────────────────────────────────────────────────────────────
 func _build_environment() -> void:
@@ -162,16 +189,40 @@ func _build_weapon(ship: ShipController) -> void:
 	ship.set_meta("weapon", w)
 
 func _build_camera(ship: ShipController) -> void:
-	var cam := ChaseCamera.new()
-	cam.target_path = ship.get_path()
-	add_child(cam)
-	cam.current = true
+	_cam = ChaseCamera.new()
+	_cam.target_path = ship.get_path()
+	add_child(_cam)
+	_cam.current = true
 
 func _build_hud(ship: ShipController) -> void:
 	_hud = ShipHUD.new()
 	_hud.ship = ship
 	_hud.weapon = ship.get_meta("weapon")
 	add_child(_hud)
+
+func _build_overlay() -> void:
+	var ov := CombatOverlay.new()
+	ov.camera = _cam
+	ov.ship = _ship
+	_hud.add_child(ov)
+
+func _fire_missile() -> void:
+	if _missiles <= 0 or _missile_cd > 0.0 or not is_instance_valid(_ship) or _ship.is_dead:
+		return
+	_missiles -= 1
+	_missile_cd = 0.35
+	var p := Projectile.new()
+	p.team = "player"
+	p.homing = true
+	p.damage = 130.0
+	p.speed = 130.0
+	p.turn_rate = 3.2
+	p.lifetime = 5.0
+	p.color = Color(1.0, 0.6, 0.25)
+	p.direction = -_ship.global_transform.basis.z
+	add_child(p)
+	p.global_position = _ship.global_position + p.direction * 3.0
+	EventBus.shot_fired.emit("missile")
 
 func _build_asteroids() -> void:
 	for i in ASTEROID_COUNT:
@@ -198,24 +249,39 @@ func _build_asteroids() -> void:
 # ── combat / waves ─────────────────────────────────────────────────────────────
 func _spawn_wave() -> void:
 	_wave += 1
-	var n := 2 + _wave
-	for i in n:
-		_spawn_drone()
+	var is_boss := _wave % 5 == 0
+	EventBus.wave_started.emit(_wave, is_boss)
+	if is_boss:
+		_spawn_enemy("res://data/enemies/boss.tres")
+		for i in 2:
+			_spawn_enemy("res://data/enemies/light_drone.tres")
+	else:
+		var n := 2 + _wave
+		for i in n:
+			_spawn_enemy(_pick_enemy())
 	if _hud != null:
 		_hud.set_combat(_kills, _enemies, _score, _wave)
 
-func _spawn_drone() -> void:
+func _pick_enemy() -> String:
+	var r := _rng.randf()
+	if _wave >= 3 and r < 0.22:
+		return "res://data/enemies/gunship.tres"
+	if _wave >= 2 and r < 0.50:
+		return "res://data/enemies/interceptor.tres"
+	return "res://data/enemies/light_drone.tres"
+
+func _spawn_enemy(path: String) -> void:
 	if not is_instance_valid(_ship):
 		return
 	var d := EnemyDroneAI.new()
-	var ed := load("res://data/enemies/light_drone.tres")
+	var ed := load(path)
 	if ed is EnemyDef:
 		d.enemy_def = ed
 	d.world = self
 	d.target = _ship
 	d.destroyed.connect(_on_enemy_destroyed)
 	add_child(d)
-	d.global_position = _ship.global_position + _random_unit() * _rng.randf_range(130.0, 230.0)
+	d.global_position = _ship.global_position + _random_unit() * _rng.randf_range(150.0, 250.0)
 	_enemies += 1
 
 func _on_enemy_destroyed(score: int, _at: Vector3) -> void:

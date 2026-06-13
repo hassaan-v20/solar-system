@@ -10,6 +10,8 @@ var speed: float = 200.0
 var direction: Vector3 = Vector3.FORWARD
 var lifetime: float = 4.0
 var color: Color = Color(0.5, 0.9, 1.0)
+var homing: bool = false
+var turn_rate: float = 2.6
 
 func _ready() -> void:
 	monitoring = true
@@ -45,13 +47,33 @@ func _ready() -> void:
 	body_entered.connect(_on_body_entered)
 
 func _physics_process(delta: float) -> void:
+	if homing:
+		var tgt := _nearest_target()
+		if tgt != null:
+			var want := (tgt.global_position - global_position).normalized()
+			direction = direction.lerp(want, clampf(turn_rate * delta, 0.0, 1.0)).normalized()
 	global_position += direction * speed * delta
 	lifetime -= delta
 	if lifetime <= 0.0:
 		queue_free()
 
+func _nearest_target() -> Node3D:
+	var group := "enemy" if team == "player" else "player"
+	var best: Node3D = null
+	var best_d := INF
+	for n in get_tree().get_nodes_in_group(group):
+		var n3 := n as Node3D
+		if n3 == null:
+			continue
+		var d := global_position.distance_squared_to(n3.global_position)
+		if d < best_d:
+			best_d = d
+			best = n3
+	return best
+
 func _on_body_entered(body: Node) -> void:
 	var target_group := "enemy" if team == "player" else "player"
 	if body.is_in_group(target_group) and body.has_method("take_damage"):
 		body.take_damage(damage)
+		EventBus.hit_landed.emit(team, global_position)
 		queue_free()

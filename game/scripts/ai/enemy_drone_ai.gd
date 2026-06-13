@@ -1,7 +1,8 @@
 class_name EnemyDroneAI
 extends CharacterBody3D
-## Light combat drone (AI layer). Seeks the player, holds a preferred range,
-## fires bolts, takes damage, and explodes. Built in code (no scene yet).
+## Combat enemy (AI layer). Two behaviours from data: "orbit" (hold range and
+## shoot) and "rush" (kamikaze charge). Bosses are just big, tanky orbiters with
+## the is_boss flag for HUD treatment. Built in code (no scene yet).
 
 signal destroyed(score: int, at: Vector3)
 
@@ -14,6 +15,7 @@ var current_hull: float = 0.0
 var _weapon: WeaponController
 var _body_mat: StandardMaterial3D
 var _flash_t: float = 0.0
+var _ram_cd: float = 0.0
 
 func _ready() -> void:
 	add_to_group("enemy")
@@ -22,7 +24,8 @@ func _ready() -> void:
 		enemy_def = EnemyDef.new()
 	current_hull = enemy_def.hull_max
 	_build_visual()
-	_build_weapon()
+	if enemy_def.behavior != "rush":
+		_build_weapon()
 
 func get_team() -> String:
 	return "enemy"
@@ -41,19 +44,33 @@ func _process(delta: float) -> void:
 func _physics_process(delta: float) -> void:
 	if target == null:
 		return
+	_ram_cd = maxf(0.0, _ram_cd - delta)
 	var to := target.global_position - global_position
 	var dist := to.length()
-	if dist > enemy_def.aggro_range or dist < 0.5:
+	if dist < 0.5:
+		move_and_slide()
+		return
+	var dir := to / dist
+
+	if enemy_def.behavior == "rush":
+		velocity += dir * enemy_def.accel * delta
+		if velocity.length() > enemy_def.move_speed:
+			velocity = velocity.normalized() * enemy_def.move_speed
+		look_at(target.global_position, Vector3.UP)
+		if dist < 5.5 and target.has_method("take_damage"):
+			target.take_damage(enemy_def.contact_damage)
+			_die()                              # kamikaze
+			return
+	elif dist > enemy_def.aggro_range:
 		velocity = velocity.lerp(Vector3.ZERO, clampf(0.5 * delta, 0.0, 1.0))
 	else:
-		var dir := to / dist
 		var desired: Vector3
 		if dist > enemy_def.preferred_range * 1.1:
 			desired = dir
 		elif dist < enemy_def.preferred_range * 0.8:
 			desired = -dir
 		else:
-			desired = dir.cross(Vector3.UP).normalized()   # strafe to feel alive
+			desired = dir.cross(Vector3.UP).normalized()
 		velocity += desired * enemy_def.accel * delta
 		if velocity.length() > enemy_def.move_speed:
 			velocity = velocity.normalized() * enemy_def.move_speed
@@ -65,7 +82,8 @@ func _physics_process(delta: float) -> void:
 func _build_visual() -> void:
 	var body := MeshInstance3D.new()
 	var prism := PrismMesh.new()
-	prism.size = Vector3(2.4, 1.4, 2.4)
+	var s := enemy_def.body_size
+	prism.size = Vector3(s, s * 0.6, s)
 	body.mesh = prism
 	body.rotation_degrees = Vector3(-90, 0, 0)
 	_body_mat = StandardMaterial3D.new()
@@ -80,7 +98,7 @@ func _build_visual() -> void:
 
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
-	shape.size = Vector3(2.4, 1.6, 2.4)
+	shape.size = Vector3(s, s * 0.7, s)
 	col.shape = shape
 	add_child(col)
 
@@ -93,22 +111,34 @@ func _build_weapon() -> void:
 	_weapon.weapon_def = wd
 	_weapon.team = "enemy"
 	_weapon.bolt_color = Color(1.0, 0.45, 0.25)
-	_weapon.muzzle_offset = Vector3(0, 0, -2.0)
+	_weapon.muzzle_offset = Vector3(0, 0, -enemy_def.body_size)
 	add_child(_weapon)
 	_weapon.world = world
 
 func _die() -> void:
 	destroyed.emit(enemy_def.score, global_position)
+	EventBus.enemy_died.emit(global_position)
 	_spawn_explosion(global_position)
+	_maybe_drop()
 	queue_free()
+
+func _maybe_drop() -> void:
+	if world == null or randf() > enemy_def.drop_chance:
+		return
+	var pk := Pickup.new()
+	pk.kind = "hull" if randf() < 0.4 else "shield"
+	pk.amount = 150.0 if pk.kind == "shield" else 120.0
+	world.add_child(pk)
+	pk.global_position = global_position
 
 func _spawn_explosion(at: Vector3) -> void:
 	if world == null:
 		return
 	var fx := MeshInstance3D.new()
 	var s := SphereMesh.new()
-	s.radius = 1.5
-	s.height = 3.0
+	var rad := 1.5 * (enemy_def.body_size / 2.4)
+	s.radius = rad
+	s.height = rad * 2.0
 	fx.mesh = s
 	var m := StandardMaterial3D.new()
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -122,6 +152,6 @@ func _spawn_explosion(at: Vector3) -> void:
 	fx.global_position = at
 	var tw := fx.create_tween()
 	tw.set_parallel(true)
-	tw.tween_property(fx, "scale", Vector3.ONE * 4.0, 0.4)
-	tw.tween_property(m, "albedo_color:a", 0.0, 0.4)
+	tw.tween_property(fx, "scale", Vector3.ONE * 4.0, 0.45)
+	tw.tween_property(m, "albedo_color:a", 0.0, 0.45)
 	tw.chain().tween_callback(fx.queue_free)
