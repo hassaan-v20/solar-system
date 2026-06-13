@@ -61,6 +61,8 @@ main.py        window, input, modes, HUD, main loop
 world.py       authoritative game state: bodies, comets, energy, commands
 scene.py       renderer: planets, skybox, rings, comets, bloom pipeline
 camera.py      orbital camera + mouse-ray picking
+server.py      authoritative co-op server (websockets)
+netclient.py   client networking (background thread + snapshots)
 hud.py         2D text/panel overlay (title, mode badges, hotbar, help)
 sprites.py     procedural galaxy / nebula sprite generation
 mesh.py        sphere / ring / quad geometry
@@ -70,25 +72,48 @@ fonts/         Orbitron (UI font)
 savegame.json  your saved game (created on Esc; git-ignored)
 ```
 
-## Multiplayer roadmap
+## Co-op multiplayer
 
-The whole universe lives in one command-driven `World` (`world.py`); every
-change goes through `world.apply(command)`. That's the hook for co-op: a server
-owns the authoritative `World` and broadcasts commands, and each client replays
-them, so everyone sees the same universe.
+Play together in real time. One machine runs an authoritative **server**
+(`server.py`) that owns the world and the simulation clock; everyone else
+connects and sees the exact same universe. Anyone can place worlds, deflect
+comets, and switch modes — changes show up for all players instantly.
 
-1. **Shared world** — a small `asyncio`/`websockets` server holds the `World`
-   and the sim clock; clients send `place` / `deflect` commands and receive
-   state snapshots.
-2. **Free-fly avatars** — each player has a labelled camera; the server relays
-   positions so you can see each other.
-3. **Co-op survival** — build and defend the same system together; one player
-   expands while the other deflects comets.
-4. **Authoritative physics later** — swap analytic orbits for real n-body
-   gravity on the server so players can launch probes.
+![co-op](coop.png)
 
-Suggested stack: `websockets` + JSON to start, `msgpack` if bandwidth matters.
-Keep the server authoritative so nobody desyncs.
+**Host a game**
+
+- From the title screen click **Host Co-op Game** — this starts a local server
+  and drops you straight in, or
+- run the server yourself: `python server.py --mode creative` (also
+  `explore` / `survival`).
+
+**Join a game**
+
+- Click **Join Co-op Game** and type the host's address, e.g.
+  `ws://192.168.1.20:8765`.
+
+**Where the host's address comes from**
+
+- **Same Wi-Fi / LAN:** the host runs `ipconfig` (Windows) / `ip addr` and
+  shares their local IP — `ws://<that-ip>:8765`.
+- **Over the internet (anywhere in the world):** the host must make port `8765`
+  reachable. Easiest options:
+  - **[Tailscale](https://tailscale.com)** (recommended) — both install it; it
+    puts your machines on one private network with no router setup. Join using
+    the host's Tailscale IP.
+  - A tunnel such as `ngrok tcp 8765` or [playit.gg](https://playit.gg), then
+    join using the public address it gives you.
+  - Or forward TCP port `8765` on the host's router to their PC.
+
+**Security note:** the server has no authentication or encryption — anyone who
+can reach the address can join and edit the world. Only share it with people you
+trust, and prefer Tailscale, which keeps it private to your devices.
+
+Architecture: the `World` (`world.py`) is fully command-driven (`world.apply`)
+and JSON-serialisable, so the server just applies commands and broadcasts state
+snapshots (~20 Hz); clients extrapolate between snapshots for smooth motion.
+Next up: free-fly avatars so you can see where each other is looking.
 
 ## Credits
 

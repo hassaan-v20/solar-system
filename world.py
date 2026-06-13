@@ -316,6 +316,8 @@ class World:
             "comet_timer": self._comet_timer,
             "next_cid": self._next_cid,
             "sim_time": sim_time,
+            "message": self.message,
+            "message_t": self.message_t,
             "bodies": [asdict(b) for b in self.bodies],
             "comets": [asdict(c) for c in self.comets],
         }
@@ -330,6 +332,8 @@ class World:
         w._elapsed = d.get("elapsed", 0.0)
         w._comet_timer = d.get("comet_timer", COMET_BASE_GAP)
         w._next_cid = d.get("next_cid", 0)
+        w.message = d.get("message", "")
+        w.message_t = d.get("message_t", 0.0)
         return w, d.get("sim_time", 0.0)
 
 

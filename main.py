@@ -1,5 +1,7 @@
 import math
+import subprocess
 import sys
+from pathlib import Path
 
 import numpy as np
 import pygame
@@ -9,8 +11,11 @@ from camera import Camera
 from scene import SolarSystem
 from hud import Hud
 from world import World, BODY_TYPES, has_save, save_game, load_game
+from netclient import NetClient
 
 WINDOWED = (1280, 720)
+SERVER_PY = Path(__file__).parent / "server.py"
+PORT = 8765
 HOTBAR = list(BODY_TYPES.keys())
 _NUM_KEYS = [pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5,
              pygame.K_6, pygame.K_7, pygame.K_8, pygame.K_9, pygame.K_0]
@@ -19,7 +24,7 @@ MODE_SPEED = {"explore": 1.0, "creative": 0.10, "survival": 0.10}
 CLICK_PIXELS = 6
 
 
-# ── shared UI layout (used by both drawing and click hit-testing) ──────────────
+# ── shared UI layout ───────────────────────────────────────────────────────────
 def point_in(rect, pos):
     x, y, w, h = rect
     return x <= pos[0] <= x + w and y <= pos[1] <= y + h
@@ -47,11 +52,13 @@ def title_button_rects(W, H, save_exists):
              ("explore", "New Game  —  Explore", True),
              ("creative", "New Game  —  Creative", True),
              ("survival", "New Game  —  Survival", True),
+             ("host", "Host Co-op Game", True),
+             ("join", "Join Co-op Game", True),
              ("quit", "Quit", True)]
-    bw, bh, gap = 360, 50, 14
+    bw, bh, gap = 360, 46, 11
     total = len(items) * bh + (len(items) - 1) * gap
     x = (W - bw) // 2
-    y = H // 2 - total // 2 + 80
+    y = H // 2 - total // 2 + 70
     out = []
     for action, label, enabled in items:
         out.append(((x, y, bw, bh), action, label, enabled))
@@ -59,7 +66,17 @@ def title_button_rects(W, H, save_exists):
     return out
 
 
-# ── display / GL setup (rebuilt on fullscreen toggle) ──────────────────────────
+def normalize_addr(s):
+    s = s.strip()
+    if not s:
+        s = "localhost"
+    if not (s.startswith("ws://") or s.startswith("wss://")):
+        s = "ws://" + s
+    if ":" not in s.split("://", 1)[1]:
+        s += f":{PORT}"
+    return s
+
+
 def setup_display(fullscreen):
     flags = pygame.OPENGL | pygame.DOUBLEBUF
     if fullscreen:
@@ -98,26 +115,44 @@ def main():
     hud.resize(W, H)
 
     clock = pygame.time.Clock()
-    state = "title"                 # "title" | "playing"
-    world = World("explore")        # also serves as the title background
+    state = "title"                  # title | join | playing
+    world = World("explore")
     sim_time = 0.0
     title_time = 0.0
     speed = MODE_SPEED["explore"]
     running = True
     selected = "rocky"
     show_help = False
+    players = []
+    net = None
+    host_proc = None
+    join_text = f"ws://localhost:{PORT}"
     dragging = False
     moved = 0.0
     down_pos = last_pos = (0, 0)
+
+    def leave_to_menu():
+        nonlocal net, host_proc, state
+        if net:
+            net.close(); net = None
+        if host_proc:
+            host_proc.terminate(); host_proc = None
+        state = "title"
 
     while True:
         dt = clock.tick(60) / 1000.0
         mouse = pygame.mouse.get_pos()
 
         if state == "playing":
-            if running:
-                sim_time += dt * speed
-            world.tick(dt, sim_time, running)
+            if net is not None:                      # multiplayer: state comes from server
+                snap = net.get_world()
+                if snap is not None:
+                    world, sim_time, speed, running, players = snap
+            else:
+                players = []
+                if running:
+                    sim_time += dt * speed
+                world.tick(dt, sim_time, running)
         else:
             title_time += dt * 0.3
             camera.yaw += dt * 3.0
@@ -128,6 +163,18 @@ def main():
                 pygame.quit(); sys.exit()
 
             elif event.type == pygame.KEYDOWN:
+                if state == "join":
+                    if event.key == pygame.K_RETURN:
+                        net = NetClient(normalize_addr(join_text), name="Player")
+                        world = World("creative"); state = "playing"
+                    elif event.key == pygame.K_ESCAPE:
+                        state = "title"
+                    elif event.key == pygame.K_BACKSPACE:
+                        join_text = join_text[:-1]
+                    elif event.unicode and event.unicode.isprintable():
+                        join_text += event.unicode
+                    continue
+
                 if event.key == pygame.K_F11:
                     fullscreen = not fullscreen
                     ctx, W, H = setup_display(fullscreen)
@@ -136,29 +183,41 @@ def main():
                     camera.resize(W, H)
                 elif event.key == pygame.K_ESCAPE:
                     if state == "playing":
-                        save_game(world, sim_time)     # autosave then back to menu
-                        state = "title"
+                        if net is not None:
+                            leave_to_menu()
+                        else:
+                            save_game(world, sim_time)
+                            state = "title"
                     else:
                         pygame.quit(); sys.exit()
                 elif state == "playing":
-                    if event.key == pygame.K_F1:
-                        world = World("explore"); sim_time = 0.0; speed = MODE_SPEED["explore"]; running = True
-                    elif event.key == pygame.K_F2:
-                        world = World("creative"); sim_time = 0.0; speed = MODE_SPEED["creative"]; running = True
-                    elif event.key == pygame.K_F3:
-                        world = World("survival"); sim_time = 0.0; speed = MODE_SPEED["survival"]; running = True
+                    if event.key in (pygame.K_F1, pygame.K_F2, pygame.K_F3):
+                        m = {pygame.K_F1: "explore", pygame.K_F2: "creative", pygame.K_F3: "survival"}[event.key]
+                        if net is not None:
+                            net.send_ctrl("mode", m)
+                        else:
+                            world = World(m); sim_time = 0.0; speed = MODE_SPEED[m]; running = True
                     elif event.key in KIND_KEYS:
                         selected = KIND_KEYS[event.key]
                     elif event.key == pygame.K_h:
                         show_help = not show_help
                     elif event.key in (pygame.K_EQUALS, pygame.K_PLUS):
-                        speed = min(speed * 2.0, 64.0)
+                        if net is not None:
+                            net.send_ctrl("speed", min(speed * 2.0, 64.0))
+                        else:
+                            speed = min(speed * 2.0, 64.0)
                     elif event.key == pygame.K_MINUS:
-                        speed = max(speed / 2.0, 0.02)
+                        if net is not None:
+                            net.send_ctrl("speed", max(speed / 2.0, 0.02))
+                        else:
+                            speed = max(speed / 2.0, 0.02)
                     elif event.key == pygame.K_r:
                         camera.reset()
                     elif event.key == pygame.K_SPACE:
-                        running = not running
+                        if net is not None:
+                            net.send_ctrl("resume" if not running else "pause")
+                        else:
+                            running = not running
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
@@ -181,12 +240,20 @@ def main():
                                     elif action == "continue":
                                         world, sim_time = load_game()
                                         speed = MODE_SPEED.get(world.mode, 0.1); running = True; state = "playing"
+                                    elif action == "host":
+                                        host_proc = subprocess.Popen(
+                                            [sys.executable, str(SERVER_PY), "--mode", "creative", "--port", str(PORT)])
+                                        net = NetClient(f"ws://127.0.0.1:{PORT}", name="Host")
+                                        world = World("creative"); state = "playing"
+                                    elif action == "join":
+                                        state = "join"
                                     else:
                                         world = World(action); sim_time = 0.0
                                         speed = MODE_SPEED[action]; running = True; state = "playing"
                                     break
-                        else:
-                            selected = handle_play_click(camera, world, event.pos, selected, sim_time, W, H)
+                        elif state == "playing":
+                            selected = handle_play_click(camera, world, event.pos, selected,
+                                                         sim_time, W, H, net)
 
             elif event.type == pygame.MOUSEMOTION:
                 if dragging and state == "playing":
@@ -205,43 +272,49 @@ def main():
         if state == "playing":
             preview = build_preview(camera, world, selected, dragging)
             renderer.render(world, camera, sim_time, preview)
-            draw_hud(hud, world, selected, speed, running, preview, mouse, show_help)
+            draw_hud(hud, world, selected, speed, running, preview, mouse, show_help, net, players)
+        elif state == "join":
+            renderer.render(World("explore"), camera, title_time, None)
+            draw_join(hud, W, H, join_text)
         else:
             renderer.render(world, camera, title_time, None)
             draw_title(hud, W, H, has_save(), mouse)
         pygame.display.flip()
 
 
-def handle_play_click(camera, world, pos, selected, sim_time, W, H):
-    # Mode badges first.
+def handle_play_click(camera, world, pos, selected, sim_time, W, H, net):
     for rect, _lbl, mode in mode_badge_rects(W):
         if point_in(rect, pos):
             if mode != world.mode:
-                new = World(mode)
-                world.bodies = new.bodies
-                world.comets = new.comets
-                world.mode = mode
-                world.energy = new.energy
-                world.score = 0
-                world._elapsed = 0.0
+                if net is not None:
+                    net.send_ctrl("mode", mode)
+                else:
+                    new = World(mode)
+                    world.bodies, world.comets = new.bodies, new.comets
+                    world.mode, world.energy, world.score = mode, new.energy, 0
+                    world._elapsed = 0.0
             return selected
-    # Hotbar slots.
     if world.mode in ("creative", "survival"):
         for rect, kind in hotbar_rects(W, H):
             if point_in(rect, pos):
                 return kind
-    # Otherwise: deflect a comet or place a body in the world.
     if world.threats_enabled:
         cid = pick_comet(camera, world, pos)
         if cid is not None:
-            world.deflect(cid)
-            world.notify("Comet deflected")
+            if net is not None:
+                net.send_cmd({"type": "deflect", "cid": cid})
+            else:
+                world.deflect(cid); world.notify("Comet deflected")
             return selected
     if world.mode in ("creative", "survival"):
         hit = camera.ground_hit(*pos)
         if hit is not None:
-            world.apply({"type": "place", "body": selected,
-                         "x": float(hit[0]), "z": float(hit[2]), "t": sim_time})
+            cmd = {"type": "place", "body": selected, "x": float(hit[0]),
+                   "z": float(hit[2]), "t": sim_time}
+            if net is not None:
+                net.send_cmd(cmd)
+            else:
+                world.apply(cmd)
     return selected
 
 
@@ -260,34 +333,56 @@ def build_preview(camera, world, selected, dragging):
             "radius": spec["radius"], "ok": ok}
 
 
-# ── title screen ───────────────────────────────────────────────────────────────
+# ── title / join screens ───────────────────────────────────────────────────────
 def draw_title(hud, W, H, save_exists, mouse):
     hud.begin()
     hud.panel(0, 0, W, H, (0.0, 0.0, 0.0, 0.45))
-    hud.text_center(W // 2, H // 2 - 235, "STELLAR", 80, (255, 235, 175), "title")
-    hud.text_center(W // 2, H // 2 - 140, "A SOLAR SYSTEM SANDBOX", 18, (165, 200, 245), "ui")
+    hud.text_center(W // 2, H // 2 - 245, "STELLAR", 80, (255, 235, 175), "title")
+    hud.text_center(W // 2, H // 2 - 152, "A SOLAR SYSTEM SANDBOX", 18, (165, 200, 245), "ui")
     for rect, action, label, enabled in title_button_rects(W, H, save_exists):
-        x, y, w, h = rect
-        hover = enabled and point_in(rect, mouse)
-        if not enabled:
-            fill, border, col = (0.05, 0.05, 0.07, 0.6), (0.2, 0.22, 0.3, 0.5), (110, 110, 120)
-        elif hover:
-            fill, border, col = (0.20, 0.42, 0.78, 0.95), (0.7, 0.85, 1.0, 1.0), (255, 255, 255)
-        else:
-            fill, border, col = (0.06, 0.09, 0.16, 0.85), (0.35, 0.42, 0.6, 0.6), (215, 222, 238)
-        hud.border_panel(x, y, w, h, fill, border, 2)
-        hud.text_center(x + w // 2, y + h // 2 - 13, label, 20, col, "ui")
-    hud.text_center(W // 2, H - 40, "Click an option  ·  F11 fullscreen  ·  Esc quit", 16,
+        _draw_button(hud, rect, label, enabled and point_in(rect, mouse), enabled)
+    hud.text_center(W // 2, H - 38, "Click an option  ·  F11 fullscreen  ·  Esc quit", 16,
                     (150, 160, 178), "body")
     hud.end()
 
 
+def draw_join(hud, W, H, text):
+    hud.begin()
+    hud.panel(0, 0, W, H, (0.0, 0.0, 0.0, 0.55))
+    hud.text_center(W // 2, H // 2 - 120, "JOIN CO-OP GAME", 34, (255, 235, 175), "title")
+    hud.text_center(W // 2, H // 2 - 64, "Enter the host's address", 18, (180, 200, 235), "ui")
+    bw, bh = 560, 52
+    x, y = (W - bw) // 2, H // 2 - 16
+    hud.border_panel(x, y, bw, bh, (0.05, 0.07, 0.12, 0.95), (0.5, 0.65, 1.0, 0.9), 2)
+    hud.text(x + 14, y + 15, text + "_", 22, (235, 240, 250), "body")
+    hud.text_center(W // 2, H // 2 + 64,
+                    "Enter = connect      Esc = back", 17, (170, 180, 200), "body")
+    hud.text_center(W // 2, H // 2 + 110,
+                    "e.g.  ws://12.34.56.78:8765   (host shares this — see README)",
+                    15, (140, 150, 170), "body")
+    hud.end()
+
+
+def _draw_button(hud, rect, label, hover, enabled):
+    x, y, w, h = rect
+    if not enabled:
+        fill, border, col = (0.05, 0.05, 0.07, 0.6), (0.2, 0.22, 0.3, 0.5), (110, 110, 120)
+    elif hover:
+        fill, border, col = (0.20, 0.42, 0.78, 0.95), (0.7, 0.85, 1.0, 1.0), (255, 255, 255)
+    else:
+        fill, border, col = (0.06, 0.09, 0.16, 0.85), (0.35, 0.42, 0.6, 0.6), (215, 222, 238)
+    hud.border_panel(x, y, w, h, fill, border, 2)
+    hud.text_center(x + w // 2, y + h // 2 - 12, label, 19, col, "ui")
+
+
 # ── in-game HUD ────────────────────────────────────────────────────────────────
-def draw_hud(hud, world, selected, speed, running, preview, mouse, show_help):
+def draw_hud(hud, world, selected, speed, running, preview, mouse, show_help, net, players):
     hud.begin()
     W, H = hud.width, hud.height
     _draw_mode_badges(hud, world, W, mouse)
     _draw_status_card(hud, world, running, speed)
+    if net is not None:
+        _draw_coop(hud, W, net, players)
     if world.mode in ("creative", "survival"):
         _draw_hotbar(hud, world, selected, W, H, mouse)
         _draw_tooltip(hud, world, selected, preview, mouse)
@@ -297,6 +392,19 @@ def draw_hud(hud, world, selected, speed, running, preview, mouse, show_help):
     if show_help:
         _draw_help(hud, world, W, H)
     hud.end()
+
+
+def _draw_coop(hud, W, net, players):
+    online = len(players) if players else 0
+    label = f"CO-OP  ·  {online} online" if net.status == "connected" else f"CO-OP  ·  {net.status}"
+    tw, _ = hud.measure(label, 16, "ui")
+    x = W - tw - 34
+    hud.border_panel(x - 14, 54, tw + 28, 34, (0.05, 0.10, 0.08, 0.8), (0.4, 0.8, 0.6, 0.7), 2)
+    hud.text(x, 61, label, 16, (150, 240, 190), "ui")
+    if net.status not in ("connected",):
+        hud.text_center(W // 2, hud.height // 2,
+                        "Connecting…" if net.status == "connecting" else f"Connection {net.status}",
+                        26, (255, 220, 160), "ui")
 
 
 def _draw_mode_badges(hud, world, W, mouse):
@@ -370,10 +478,10 @@ def _draw_help(hud, world, W, H):
         ("1 - 0", "pick a world or star (see the bar below)"),
         ("Left click", "place it on an orbit, or deflect a comet"),
         ("Click badges/bar", "switch mode or select a body with the mouse"),
-        ("Drag", "rotate view        Scroll  zoom"),
-        ("+ / -", "change speed       Space  pause"),
-        ("F11", "fullscreen         Esc    back to menu"),
-        ("R", "reset camera        H      close help"),
+        ("Drag / Scroll", "rotate view / zoom"),
+        ("+ / -  ·  Space", "change speed / pause"),
+        ("F11  ·  Esc", "fullscreen / back to menu"),
+        ("Co-op", "Host or Join from the menu to play together"),
     ]
     pw, ph = 640, 44 + 30 * len(lines) + 40
     px, py = (W - pw) // 2, (H - ph) // 2
@@ -382,7 +490,7 @@ def _draw_help(hud, world, W, H):
     y = py + 56
     for key, desc in lines:
         hud.text(px + 28, y, key, 16, (140, 210, 255), "ui")
-        hud.text(px + 240, y, desc, 16, (205, 212, 228), "body")
+        hud.text(px + 250, y, desc, 16, (205, 212, 228), "body")
         y += 30
     hud.text_center(W // 2, py + ph - 30,
                     "Survival tip: build near the Sun's habitable zone for more energy.",
