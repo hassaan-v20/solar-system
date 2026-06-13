@@ -108,6 +108,21 @@ class SurfaceRenderer:
         self.prog_bb["up"].value = (0.0, 1.0, 0.0)
         self.prog_bb["tex"].value = 0
 
+        # The rest of the solar system, far away in the sky (moves with the
+        # camera so it behaves like it's at infinity).
+        BIGR = 480.0
+        self.tex_orb.use(0)
+        for sb in surf.sky:
+            dx, dy, dz = sb["dir"]
+            size = sb["size"]
+            cx = float(surf.x) + dx * BIGR
+            cy = dy * BIGR - size * 0.5
+            cz = float(surf.z) + dz * BIGR
+            self.prog_bb["center"].value = (cx, cy, cz)
+            self.prog_bb["size"].value = size
+            self.prog_bb["color"].value = tuple(sb["color"])
+            self.bb_vao.render(moderngl.TRIANGLE_STRIP)
+
         self.tex_creature.use(0)
         for c in surf.creatures:
             if not c.alive:

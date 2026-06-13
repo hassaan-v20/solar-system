@@ -81,6 +81,7 @@ class Surface:
         self.inv = {}
         self.creatures = []
         self.loot = []
+        self.sky = []          # celestial bodies visible overhead: {dir, color, size}
         self.kills = 0
         self.dead = False
         self.spawn_t = 1.0

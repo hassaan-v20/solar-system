@@ -34,12 +34,15 @@ a while. In co-op, anyone can harvest, so there's plenty to do together.
 
 ## On the surface (first-person)
 
-**Right-click any planet** in space to land on it and drop into a first-person
-survival mode on its surface.
+Press **L** (or right-click a planet) to open the **Land** menu, then click a
+planet **by name** to teleport down into a first-person survival mode on its
+surface. From the ground you can see the **Sun and the other planets in the
+sky**, in their real directions.
 
 ![surface](surface.png)
 
-- **WASD** move, **mouse** look, **left click** attack, **Esc** return to space.
+- **L** open the land menu  ·  **WASD** move  ·  **mouse** look  ·
+  **left click** attack  ·  **Esc** return to space.
 - Creatures (critters, beasts, aliens) roam and attack — kill them for loot:
   **hide, bone, crystal, alloy**.
 - **Craft** better gear with keys **1-4**: Alloy Blade and Plasma Blaster
@@ -67,7 +70,7 @@ decade). Developed and tested on an AMD Radeon RX 6600 XT.
 | Click badges / bar | Switch mode or pick a body with the mouse |
 | `1` – `0`          | Pick body: Moon, Rocky, Ocean, Desert, Lava, Ice, Toxic, Sulfur, Gas, Star |
 | Left click         | Place selected body, or deflect a comet |
-| Right click planet | Land on it (first-person surface mode)  |
+| `L` / right click  | Land on a planet (pick by name → first-person) |
 | Drag mouse         | Orbit the camera                        |
 | Scroll wheel       | Zoom in / out                           |
 | `+` / `-`          | Speed up / slow down time               |

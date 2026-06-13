@@ -140,6 +140,43 @@ def planet_kind_from_body(b):
     return "rocky"
 
 
+def landable_bodies(world):
+    return [b for b in world.bodies if b.alive and b.special not in ("sun", "star")]
+
+
+def land_menu_rects(W, H, bodies):
+    bw, bh, gap = 380, 40, 8
+    n = max(1, len(bodies))
+    total = n * bh + (n - 1) * gap
+    x = (W - bw) // 2
+    y0 = H // 2 - total // 2
+    return [((x, y0 + i * (bh + gap), bw, bh), bodies[i]) for i in range(len(bodies))]
+
+
+def build_sky(world, landed, t):
+    """Directions to the Sun and the other planets, as seen from `landed`."""
+    P = np.array(body_world_pos(landed, t), dtype="f8")
+    sky = []
+
+    def lift(v):
+        n = np.linalg.norm(v) or 1.0
+        v = v / n
+        v[1] = abs(v[1]) * 0.6 + 0.18      # keep it above the horizon
+        n = np.linalg.norm(v) or 1.0
+        return tuple(v / n)
+
+    sky.append({"dir": lift(-P.copy()), "color": (1.0, 0.85, 0.40), "size": 46.0})  # Sun
+    for b in world.bodies:
+        if b is landed or not b.alive or b.special == "sun":
+            continue
+        v = np.array(body_world_pos(b, t), dtype="f8") - P
+        if np.linalg.norm(v) < 1e-3:
+            continue
+        col = tuple(b.tint) if any(c != 1.0 for c in b.tint) else (0.8, 0.85, 1.0)
+        sky.append({"dir": lift(v), "color": col, "size": 14.0})
+    return sky
+
+
 def pick_entity(camera, world, pos, t):
     origin, d = camera.screen_ray(*pos)
     best, best_t = None, 1e9
@@ -198,6 +235,17 @@ def main():
         if host_proc:
             host_proc.terminate(); host_proc = None
         state = "title"
+
+    def land_on(b):
+        nonlocal surf, surf_renderer, state
+        surf = Surface(planet_kind_from_body(b))
+        surf.sky = build_sky(world, b, sim_time)
+        if surf_renderer is None:
+            surf_renderer = SurfaceRenderer(ctx, renderer.tex)
+        pygame.event.set_grab(True)
+        pygame.mouse.set_visible(False)
+        pygame.mouse.get_rel()
+        state = "surface"
 
     while True:
         dt = clock.tick(60) / 1000.0
@@ -269,6 +317,11 @@ def main():
                         host_pw += event.unicode
                     continue
 
+                if state == "land_menu":
+                    if event.key in (pygame.K_ESCAPE, pygame.K_l):
+                        state = "playing"
+                    continue
+
                 if state == "surface":
                     if event.key == pygame.K_ESCAPE:
                         pygame.event.set_grab(False)
@@ -324,17 +377,10 @@ def main():
                         else:
                             running = not running
                     elif event.key == pygame.K_l:
-                        b = pick_body(camera, world, (W // 2, H // 2), sim_time)
-                        if b is not None:
-                            surf = Surface(planet_kind_from_body(b))
-                            if surf_renderer is None:
-                                surf_renderer = SurfaceRenderer(ctx, renderer.tex)
-                            pygame.event.set_grab(True)
-                            pygame.mouse.set_visible(False)
-                            pygame.mouse.get_rel()
-                            state = "surface"
+                        if landable_bodies(world):
+                            state = "land_menu"
                         else:
-                            world.notify("Point the view near a planet, then press L")
+                            world.notify("No planets to land on yet")
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if state == "surface":
@@ -347,13 +393,7 @@ def main():
                 elif event.button == 3 and state == "playing":
                     b = pick_body(camera, world, event.pos, sim_time)
                     if b is not None:
-                        surf = Surface(planet_kind_from_body(b))
-                        if surf_renderer is None:
-                            surf_renderer = SurfaceRenderer(ctx, renderer.tex)
-                        pygame.event.set_grab(True)
-                        pygame.mouse.set_visible(False)
-                        pygame.mouse.get_rel()
-                        state = "surface"
+                        land_on(b)
                 elif event.button == 4:
                     camera.zoom(-4.0)
                 elif event.button == 5:
@@ -363,7 +403,12 @@ def main():
                 if event.button == 1:
                     dragging = False
                     if moved < CLICK_PIXELS:
-                        if state == "title":
+                        if state == "land_menu":
+                            for rect, b in land_menu_rects(W, H, landable_bodies(world)):
+                                if point_in(rect, event.pos):
+                                    land_on(b)
+                                    break
+                        elif state == "title":
                             for rect, action, _lbl, enabled in title_button_rects(W, H, has_save()):
                                 if enabled and point_in(rect, event.pos):
                                     if action == "quit":
@@ -418,6 +463,9 @@ def main():
             renderer.render(world, camera, sim_time, preview, avatars)
             draw_hud(hud, world, selected, speed, running, preview, mouse, show_help,
                      net, players, avatar_labels)
+        elif state == "land_menu":
+            renderer.render(world, camera, sim_time, None)
+            draw_land_menu(hud, world, W, H, mouse)
         elif state == "surface":
             surf_renderer.render(surf, W, H)
             draw_surface_hud(hud, surf, W, H)
@@ -680,6 +728,28 @@ def _draw_help(hud, world, W, H):
     hud.text_center(W // 2, py + ph - 30,
                     "Survival tip: build near the Sun's habitable zone for more energy.",
                     15, (170, 180, 200), "body")
+
+
+def draw_land_menu(hud, world, W, H, mouse):
+    hud.begin()
+    hud.panel(0, 0, W, H, (0.0, 0.0, 0.0, 0.55))
+    bodies = landable_bodies(world)
+    hud.text_center(W // 2, max(40, H // 2 - (len(bodies) * 48) // 2 - 70),
+                    "LAND ON A PLANET", 34, (255, 235, 175), "title")
+    for rect, b in land_menu_rects(W, H, bodies):
+        x, y, w, h = rect
+        hover = point_in(rect, mouse)
+        if hover:
+            fill, border, col = (0.20, 0.42, 0.78, 0.95), (0.7, 0.85, 1.0, 1.0), (255, 255, 255)
+        else:
+            fill, border, col = (0.06, 0.09, 0.16, 0.85), (0.35, 0.42, 0.6, 0.6), (215, 222, 238)
+        hud.border_panel(x, y, w, h, fill, border, 2)
+        kind = planet_kind_from_body(b)
+        hud.text(x + 18, y + h // 2 - 11, b.name, 20, col, "ui")
+        hud.text(x + w - 150, y + h // 2 - 9, kind, 16, (160, 175, 200), "body")
+    hud.text_center(W // 2, H - 44, "Click a planet to teleport there   ·   Esc to cancel",
+                    16, (150, 160, 178), "body")
+    hud.end()
 
 
 def draw_surface_hud(hud, surf, W, H):
