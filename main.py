@@ -13,7 +13,8 @@ from hud import Hud
 from world import World, BODY_TYPES, body_world_pos, has_save, save_game, load_game
 from netclient import NetClient
 from surface import Surface, RECIPE_ORDER, RECIPE_LABEL, RECIPES, WEAPONS, ARMORS, ITEM_ORDER, ITEM_COLOR, PLAYER_MAX_HP
-from surface_scene import SurfaceRenderer
+from surface_scene import SurfaceRenderer, THEME as SURF_THEME
+from terrain import Terrain
 
 LOOK_SENS = 0.0026
 
@@ -153,8 +154,16 @@ def land_menu_rects(W, H, bodies):
     return [((x, y0 + i * (bh + gap), bw, bh), bodies[i]) for i in range(len(bodies))]
 
 
+SKY_COLOR = {
+    "ocean": (0.35, 0.6, 1.0), "lava": (1.0, 0.4, 0.2), "ice": (0.7, 0.9, 1.0),
+    "toxic": (0.5, 1.0, 0.4), "sulfur": (1.0, 0.9, 0.35), "desert": (0.95, 0.78, 0.45),
+    "rocky": (0.75, 0.72, 0.68),
+}
+
+
 def build_sky(world, landed, t):
-    """Directions to the Sun and the other planets, as seen from `landed`."""
+    """Directions to the Sun and the other planets, as seen from `landed`.
+    Each planet gets a distinct colour and a size based on its real radius."""
     P = np.array(body_world_pos(landed, t), dtype="f8")
     sky = []
 
@@ -165,15 +174,16 @@ def build_sky(world, landed, t):
         n = np.linalg.norm(v) or 1.0
         return tuple(v / n)
 
-    sky.append({"dir": lift(-P.copy()), "color": (1.0, 0.85, 0.40), "size": 46.0})  # Sun
+    sky.append({"dir": lift(-P.copy()), "color": (1.0, 0.82, 0.35), "size": 64.0})  # Sun
     for b in world.bodies:
         if b is landed or not b.alive or b.special == "sun":
             continue
         v = np.array(body_world_pos(b, t), dtype="f8") - P
         if np.linalg.norm(v) < 1e-3:
             continue
-        col = tuple(b.tint) if any(c != 1.0 for c in b.tint) else (0.8, 0.85, 1.0)
-        sky.append({"dir": lift(v), "color": col, "size": 14.0})
+        col = SKY_COLOR.get(planet_kind_from_body(b), (0.8, 0.85, 1.0))
+        size = 15.0 + min(b.radius, 3.5) * 3.5
+        sky.append({"dir": lift(v), "color": col, "size": size})
     return sky
 
 
@@ -238,7 +248,10 @@ def main():
 
     def land_on(b):
         nonlocal surf, surf_renderer, state
-        surf = Surface(planet_kind_from_body(b))
+        kind = planet_kind_from_body(b)
+        amp = SURF_THEME.get(kind, SURF_THEME["rocky"])[3]
+        surf = Surface(kind)
+        surf.terrain = Terrain(seed=sum(ord(c) for c in b.name) + int(b.dist), amp=amp)
         surf.sky = build_sky(world, b, sim_time)
         if surf_renderer is None:
             surf_renderer = SurfaceRenderer(ctx, renderer.tex)
@@ -430,7 +443,7 @@ def main():
 
             elif event.type == pygame.MOUSEMOTION:
                 if state == "surface":
-                    surf.yaw += event.rel[0] * LOOK_SENS
+                    surf.yaw -= event.rel[0] * LOOK_SENS      # mouse right -> look right
                     surf.pitch = max(-1.4, min(1.4, surf.pitch - event.rel[1] * LOOK_SENS))
                 elif dragging and state == "playing":
                     dx = event.pos[0] - last_pos[0]

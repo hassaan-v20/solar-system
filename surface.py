@@ -38,12 +38,16 @@ RECIPE_LABEL = {"blade": "Alloy Blade", "hide": "Hide Armour",
                 "blaster": "Plasma Blaster", "plated": "Plated Armour"}
 
 CREATURES = {
-    "critter": {"hp": 18, "dmg": 6,  "speed": 3.6, "size": 1.7,
-                "loot": ["hide", "bone"],        "color": (0.55, 0.85, 0.40)},
-    "beast":   {"hp": 46, "dmg": 15, "speed": 2.9, "size": 2.7,
-                "loot": ["hide", "bone", "bone"], "color": (0.75, 0.45, 0.30)},
-    "alien":   {"hp": 30, "dmg": 12, "speed": 4.4, "size": 2.0,
-                "loot": ["crystal", "alloy"],     "color": (0.55, 0.45, 0.95)},
+    "critter": {"hp": 18, "dmg": 6,  "speed": 3.6, "size": 1.7, "variant": 0,
+                "loot": ["hide", "bone"],                  "color": (0.55, 0.85, 0.40)},
+    "alien":   {"hp": 30, "dmg": 12, "speed": 4.4, "size": 2.1, "variant": 1,
+                "loot": ["crystal", "alloy"],              "color": (0.60, 0.45, 0.98)},
+    "brute":   {"hp": 64, "dmg": 19, "speed": 2.4, "size": 3.1, "variant": 2,
+                "loot": ["hide", "bone", "bone", "alloy"], "color": (0.80, 0.40, 0.28)},
+    "stalker": {"hp": 22, "dmg": 9,  "speed": 5.3, "size": 1.6, "variant": 3,
+                "loot": ["crystal", "hide"],               "color": (0.35, 0.90, 0.85)},
+    "flyer":   {"hp": 26, "dmg": 10, "speed": 4.0, "size": 1.9, "variant": 4,
+                "loot": ["alloy", "crystal"],              "color": (0.45, 0.80, 1.00)},
 }
 ITEM_COLOR = {"hide": (0.75, 0.52, 0.35), "bone": (0.92, 0.92, 0.82),
               "crystal": (0.50, 0.90, 1.00), "alloy": (0.80, 0.82, 0.95)}
@@ -82,6 +86,7 @@ class Surface:
         self.creatures = []
         self.loot = []
         self.sky = []          # celestial bodies visible overhead: {dir, color, size}
+        self.terrain = None    # set by main on landing (height lookups)
         self.kills = 0
         self.dead = False
         self.spawn_t = 1.0
@@ -95,9 +100,10 @@ class Surface:
             if self.message_t > 0:
                 self.message_t -= dt
             return
-        # Move relative to facing (yaw): forward = +Z-ish rotated by yaw.
+        # Move relative to facing. forward matches the camera; right = camera-right
+        # (cross of forward and up) so D strafes screen-right, A screen-left.
         fx, fz = math.sin(self.yaw), math.cos(self.yaw)
-        rx, rz = math.cos(self.yaw), -math.sin(self.yaw)
+        rx, rz = -math.cos(self.yaw), math.sin(self.yaw)
         mx, mz = fx * forward + rx * strafe, fz * forward + rz * strafe
         n = math.hypot(mx, mz)
         if n > 0:

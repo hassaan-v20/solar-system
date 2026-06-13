@@ -43,14 +43,18 @@ sky**, in their real directions.
 
 - **L** open the land menu  ·  **WASD** move  ·  **mouse** look  ·
   **left click** attack  ·  **Esc** return to space.
-- Creatures (critters, beasts, aliens) roam and attack — kill them for loot:
-  **hide, bone, crystal, alloy**.
+- Each planet has its own **rugged terrain** — mountains, valleys and scattered
+  rocks — lit by its Sun, with the rest of the solar system (colour-coded) up in
+  the sky.
+- **Five alien species** (critter, alien, brute, stalker, flyer) roam and attack
+  — each looks and behaves differently. Kill them for loot: **hide, bone,
+  crystal, alloy**.
 - **Craft** better gear with keys **1-4**: Alloy Blade and Plasma Blaster
   (weapons), Hide and Plated Armour. Better weapons hit harder/farther; armour
   reduces the damage you take.
-- Each planet type has its own ground and sky. Watch your health bar!
 
-This first-person mode is single-player for now (on-foot co-op is a future step).
+Single-player for now (on-foot co-op is a future step). Terrain is heightmap-based
+— true caves/overhangs are a future addition.
 
 ## Run it
 
@@ -90,7 +94,8 @@ camera.py      orbital camera + mouse-ray picking
 server.py      authoritative co-op server (websockets)
 netclient.py   client networking (background thread + snapshots)
 surface.py     first-person surface mode: creatures, loot, crafting
-surface_scene.py  first-person renderer (ground, sky, sprite creatures)
+surface_scene.py  first-person renderer (terrain, sky, sprite creatures)
+terrain.py     procedural heightmap terrain (mountains / valleys)
 hud.py         2D text/panel overlay (title, mode badges, hotbar, help)
 sprites.py     procedural galaxy / nebula sprite generation
 mesh.py        sphere / ring / quad geometry
