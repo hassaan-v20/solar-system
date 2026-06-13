@@ -19,6 +19,7 @@ var _score: int = 0
 var _wave: int = 0
 
 const MISSILE_MAX := 6
+var _missile_max: int = MISSILE_MAX
 var _missiles: int = MISSILE_MAX
 var _missile_cd: float = 0.0
 var _missile_regen: float = 0.0
@@ -28,6 +29,8 @@ func _ready() -> void:
 	var vp := get_viewport()
 	vp.use_taa = true
 	vp.msaa_3d = Viewport.MSAA_2X
+	_missile_max = MISSILE_MAX + GameState.missile_bonus()
+	_missiles = _missile_max
 	_setup_input()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	add_child(Sfx.new())
@@ -41,27 +44,16 @@ func _ready() -> void:
 	_build_hud(_ship)
 	_build_overlay()
 	_build_asteroids()
-	EventBus.ship_destroyed.connect(_on_ship_destroyed)
-	_spawn_wave()
 	_start_mission()
 
-const MISSIONS := [
-	"res://data/missions/ghost_station.tres",
-	"res://data/missions/salvage_run.tres",
-	"res://data/missions/last_stand.tres",
-	"res://data/missions/bounty_hunt.tres",
-	"res://data/missions/deep_core.tres",
-]
+var _ending: bool = false
 
 func _start_mission() -> void:
 	EventBus.mission_spawn.connect(_on_mission_spawn)
 	EventBus.mission_state_changed.connect(_on_mission_state)
-	_new_mission()
-
-func _new_mission() -> void:
 	for o in get_tree().get_nodes_in_group("objective"):
 		o.queue_free()
-	var def := load(MISSIONS[_rng.randi() % MISSIONS.size()])
+	var def := load(GameState.selected_mission)
 	_mission = MissionManager.new()
 	_mission.world = self
 	_mission.ship = _ship
@@ -74,11 +66,19 @@ func _on_mission_spawn(count: int, near: Vector3, _elite: bool) -> void:
 		_spawn_enemy(_pick_enemy(), near)
 
 func _on_mission_state(state: String) -> void:
-	if state == "complete" or state == "failed":
-		await get_tree().create_timer(6.0).timeout
-		if is_instance_valid(_mission):
-			_mission.queue_free()
-		_new_mission()
+	if state == "complete":
+		_end_raid(true)
+	elif state == "failed":
+		_end_raid(false)
+
+func _end_raid(success: bool) -> void:
+	if _ending:
+		return
+	_ending = true
+	var def := load(GameState.selected_mission)
+	GameState.grant_reward(success, def.reward, def.display_name)
+	await get_tree().create_timer(3.5).timeout
+	get_tree().change_scene_to_file("res://scenes/station.tscn")
 
 func _process(delta: float) -> void:
 	for a in _asteroids:
@@ -87,13 +87,13 @@ func _process(delta: float) -> void:
 		var f := clampf(_ship.get_speed() / _ship.ship_def.max_speed, 0.0, 1.0)
 		_engine_mat.emission_energy_multiplier = 1.4 + f * 3.5 + (3.0 if _ship.is_boosting else 0.0)
 	_missile_cd = maxf(0.0, _missile_cd - delta)
-	if _missiles < MISSILE_MAX:
+	if _missiles < _missile_max:
 		_missile_regen += delta
 		if _missile_regen >= 3.5:
 			_missile_regen = 0.0
 			_missiles += 1
 	if _hud != null:
-		_hud.set_missiles(_missiles, MISSILE_MAX)
+		_hud.set_missiles(_missiles, _missile_max)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("toggle_mouse"):
@@ -136,79 +136,18 @@ func _setup_input() -> void:
 
 # ── world ─────────────────────────────────────────────────────────────────────
 func _build_environment() -> void:
-	# Three distant suns: each a visible bright star plus a directional light, so
-	# the whole sector is well lit and easy to read while still feeling like space.
-	_build_sun(Vector3(1.0, 0.45, 0.6), Color(1.0, 0.92, 0.78), 1.7, 30.0)    # warm key
-	_build_sun(Vector3(-0.7, 0.25, -0.8), Color(0.55, 0.7, 1.0), 0.7, 22.0)   # cool fill
-	_build_sun(Vector3(0.2, -0.55, 0.8), Color(1.0, 0.6, 0.7), 0.5, 18.0)     # pink rim
-
-	var env := Environment.new()
-	var sky_mat := ShaderMaterial.new()
-	sky_mat.shader = load("res://assets/shaders/space_sky.gdshader")
-	var sky := Sky.new()
-	sky.sky_material = sky_mat
-	env.background_mode = Environment.BG_SKY
-	env.sky = sky
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.95
-	env.glow_enabled = true
-	env.glow_intensity = 0.7
-	env.glow_bloom = 0.25
-	env.glow_strength = 1.1
-	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.tonemap_exposure = 1.05
-	env.fog_enabled = true
-	env.fog_light_color = Color(0.03, 0.04, 0.08)
-	env.fog_density = 0.0011
-	# Modern post-processing for a realistic look.
-	env.ssao_enabled = true
-	env.ssao_radius = 2.0
-	env.ssao_intensity = 2.2
-	env.ssr_enabled = true
-	env.ssr_max_steps = 32
-	env.volumetric_fog_enabled = true
-	env.volumetric_fog_density = 0.003
-	env.volumetric_fog_emission = Color(0.05, 0.07, 0.14)
-	env.volumetric_fog_emission_energy = 0.3
-	env.adjustment_enabled = true
-	env.adjustment_brightness = 1.02
-	env.adjustment_contrast = 1.08
-	env.adjustment_saturation = 1.14
+	SpaceEnv.add_suns(self)
 	var we := WorldEnvironment.new()
-	we.environment = env
+	we.environment = SpaceEnv.make_environment()
 	add_child(we)
-
-func _build_sun(dir: Vector3, col: Color, energy: float, radius: float) -> void:
-	var d := dir.normalized()
-	# Visible star far away.
-	var star := MeshInstance3D.new()
-	var sm := SphereMesh.new()
-	sm.radius = radius
-	sm.height = radius * 2.0
-	star.mesh = sm
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.albedo_color = col
-	mat.emission_enabled = true
-	mat.emission = col
-	mat.emission_energy_multiplier = 8.0
-	star.material_override = mat
-	add_child(star)
-	star.global_position = d * 1700.0
-	# Directional light from that star.
-	var dl := DirectionalLight3D.new()
-	dl.light_color = col
-	dl.light_energy = energy
-	add_child(dl)
-	if absf(d.dot(Vector3.UP)) < 0.98:
-		dl.look_at(-d, Vector3.UP)
 
 func _build_ship() -> ShipController:
 	var ship := ShipController.new()
 	ship.name = "Wayfarer"
 	var def := load("res://data/ships/wayfarer.tres")
 	if def is ShipDef:
-		ship.ship_def = def
+		ship.ship_def = def.duplicate()
+		GameState.apply_ship(ship.ship_def)
 
 	var hull := StandardMaterial3D.new()
 	hull.albedo_color = Color(0.55, 0.60, 0.70)
@@ -393,7 +332,9 @@ func _build_weapon(ship: ShipController) -> void:
 	var w := WeaponController.new()
 	var wd := load("res://data/weapons/laser_cannon_mk1.tres")
 	if wd is WeaponDef:
-		w.weapon_def = wd
+		var w_def := wd.duplicate()
+		GameState.apply_weapon(w_def)
+		w.weapon_def = w_def
 	w.team = "player"
 	w.poll_input = true
 	w.bolt_color = Color(0.5, 0.9, 1.0)
@@ -513,9 +454,9 @@ func _spawn_wave() -> void:
 
 func _pick_enemy() -> String:
 	var r := _rng.randf()
-	if _wave >= 3 and r < 0.22:
+	if r < 0.20:
 		return "res://data/enemies/gunship.tres"
-	if _wave >= 2 and r < 0.50:
+	if r < 0.55:
 		return "res://data/enemies/interceptor.tres"
 	return "res://data/enemies/light_drone.tres"
 
@@ -542,10 +483,6 @@ func _on_enemy_destroyed(score: int, _at: Vector3) -> void:
 	_enemies -= 1
 	if _hud != null:
 		_hud.set_combat(_kills, _enemies, _score, _wave)
-	if _enemies <= 0:
-		await get_tree().create_timer(2.5).timeout
-		if is_instance_valid(_ship) and not _ship.is_dead:
-			_spawn_wave()
 
 func _on_ship_destroyed() -> void:
 	if _hud != null:

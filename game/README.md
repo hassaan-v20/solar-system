@@ -51,6 +51,17 @@ volumetric fog, colour grading, stronger bloom, and TAA/MSAA**. Note: the bigger
 fidelity leap (modelled `.glb` ships + PBR textures) is the next step and just
 needs art assets.
 
+## The loop (M4)
+
+**Title → Station Hub → Raid → back to Station.** The title is a live 3D space
+scene (nebula, suns, a turning hero ship, drifting rocks) with a game menu. In the
+**station hub** you spend **credits** on ship **upgrades** (hull, shield, laser,
+engine, missile rack), pick a **contract**, and launch. Completing the raid pays
+out credits (a quarter on failure); your **credits, upgrades and stats persist**
+between sessions (`user://profile.cfg`). The whole game shares one **extreme**
+space look: nebula sky, three suns, heavy bloom, SSAO/SSIL/SSR, volumetric haze,
+colour grading, and TAA + 4× MSAA.
+
 ## Run it
 
 ```bash
@@ -86,5 +97,5 @@ configs), `assets/` (art/audio).
 
 ## Next milestones
 
-✅ M2 combat → 🔧 **M3** mission FSM (dock, hack, extract — first pass in) → M4
-station + economy + persistence → M5 co-op multiplayer.
+✅ M2 combat → ✅ M3 missions → 🔧 **M4** station + economy + persistence (first
+pass in: hub, upgrades, credits, save) → M5 co-op multiplayer.
