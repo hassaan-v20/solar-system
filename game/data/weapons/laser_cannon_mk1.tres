@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="WeaponDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/weapon_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+weapon_id = "laser_cannon_mk1"
+display_name = "Laser Cannon Mk I"
+damage = 25.0
+fire_rate = 6.0
+heat_per_shot = 7.0
+max_heat = 100.0
+cooldown_rate = 35.0
+weapon_range = 800.0

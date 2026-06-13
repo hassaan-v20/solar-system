@@ -9,16 +9,39 @@ extends CharacterBody3D
 var current_hull: float = 0.0
 var current_shield: float = 0.0
 var is_boosting: bool = false
+var is_dead: bool = false
+
+const SHIELD_REGEN := 18.0          # shield points per second
+const REGEN_DELAY := 4.0            # seconds after a hit before shields recharge
 
 var _mouse_delta: Vector2 = Vector2.ZERO
+var _since_hit: float = 999.0
 
 func _ready() -> void:
 	if ship_def == null:
 		ship_def = ShipDef.new()
+	add_to_group("player")
 	# Floating mode = free 3D movement with no gravity/floor logic (space flight).
 	motion_mode = CharacterBody3D.MOTION_MODE_FLOATING
 	current_hull = ship_def.hull_max
 	current_shield = ship_def.shield_max
+
+func get_team() -> String:
+	return "player"
+
+func take_damage(amount: float) -> void:
+	if is_dead:
+		return
+	_since_hit = 0.0
+	var to_shield := minf(current_shield, amount)
+	current_shield -= to_shield
+	current_hull -= (amount - to_shield)
+	EventBus.ship_shield_changed.emit(current_shield, ship_def.shield_max)
+	EventBus.ship_hull_changed.emit(current_hull, ship_def.hull_max)
+	if current_hull <= 0.0:
+		current_hull = 0.0
+		is_dead = true
+		EventBus.ship_destroyed.emit()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
@@ -27,6 +50,13 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	_steer(delta)
 	_translate(delta)
+	_regen(delta)
+
+func _regen(delta: float) -> void:
+	_since_hit += delta
+	if not is_dead and _since_hit > REGEN_DELAY and current_shield < ship_def.shield_max:
+		current_shield = minf(ship_def.shield_max, current_shield + SHIELD_REGEN * delta)
+		EventBus.ship_shield_changed.emit(current_shield, ship_def.shield_max)
 
 func _steer(delta: float) -> void:
 	# Mouse steers the nose (yaw + pitch); A/D roll the hull.

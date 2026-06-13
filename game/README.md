@@ -7,12 +7,13 @@ Design: [`../docs/GDD.md`](../docs/GDD.md) · Tech stack:
 > The Python/ModernGL game in the repo root is the legacy prototype, kept for
 > reference. New work happens here.
 
-## Current state: Milestone 1 — flyable sector
+## Current state: Milestone 2 — combat
 
-A single space sector you can fly the **Wayfarer** around, with a chase camera,
-asteroid field, starfield, and a minimal HUD. Everything is placeholder
-primitives built in code — no art needed yet. The point of M1 is purely:
-**does flying feel good?**
+Fly the **Wayfarer** through a sector and fight waves of enemy drones. Adds a
+laser (with heat/overheat), visible energy bolts, drone AI that seeks and shoots,
+a ship damage system (shields → hull, with regen), and death/respawn. Visuals
+upgraded: an infinite **starfield + nebula sky** (no more congested near stars),
+depth fog, engine glow, and spinning asteroids. Still placeholder primitives.
 
 ## Run it
 
@@ -36,6 +37,7 @@ Or open the Godot editor, **Import** → select `game/project.godot`, then press
 | `Q` / `E` | Strafe left / right |
 | `Shift` | Boost |
 | `Ctrl` | Brake |
+| `Space` / Left Mouse | Fire laser |
 | `Esc` | Toggle mouse capture |
 | `F8` | Quit |
 
@@ -47,5 +49,5 @@ configs), `assets/` (art/audio).
 
 ## Next milestones
 
-M2 combat (laser, projectiles, drone AI, damage) → M3 mission FSM (dock, hack,
-extract) → M4 station + economy + persistence → M5 co-op multiplayer.
+✅ M2 combat (laser, projectiles, drone AI, damage) → **M3** mission FSM (dock,
+hack, extract) → M4 station + economy + persistence → M5 co-op multiplayer.
