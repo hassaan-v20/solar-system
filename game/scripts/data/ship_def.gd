@@ -15,6 +15,13 @@ extends Resource
 @export var utility_slots: int = 1
 @export var repair_kits: int = 3
 
+# Collision impact (ramming asteroids / debris / drones). Damage scales with how
+# hard you hit along the surface normal; nudges under collision_min_speed are free
+# so docking and light grazes don't sting. Restitution is how bouncy the hull is.
+@export var collision_min_speed: float = 6.0
+@export var collision_damage_per_speed: float = 6.0
+@export var collision_restitution: float = 0.45
+
 # Flight feel (arcade tuning — not in the GDD JSON, needed for game feel)
 @export var acceleration: float = 30.0
 @export var strafe_accel: float = 22.0

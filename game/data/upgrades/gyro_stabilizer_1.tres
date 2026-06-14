@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="UpgradeDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/upgrade_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+upgrade_id = "gyro_stabilizer_1"
+display_name = "Gyro Stabilizer I"
+description = "+20% turn rate"
+cost = 220
+stat = "turn_speed"
+mult = 1.2
+add = 0.0

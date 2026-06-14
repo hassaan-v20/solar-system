@@ -294,6 +294,10 @@ func _build_environment() -> void:
 	var sky_mat := PanoramaSkyMaterial.new()
 	sky_mat.panorama = load("res://assets/textures/8k_stars_milky_way.jpg")
 	sky.sky_material = sky_mat
+	# Cheaper sky: a small reflection-probe size and incremental updates — the
+	# starfield is static, so it needn't recompute full radiance each frame (FPS).
+	sky.radiance_size = Sky.RADIANCE_SIZE_128
+	sky.process_mode = Sky.PROCESS_MODE_INCREMENTAL
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.12, 0.14, 0.20)
@@ -331,6 +335,9 @@ func _build_ship() -> ShipController:
 	# Carry persisted damage into the run (repairing at the station restores it),
 	# but floor it so an unrepaired ship is never launched dead/unplayable.
 	ship.current_hull = ship.ship_def.hull_max * clampf(PlayerProfile.ship_hull_pct, 0.3, 1.0)
+	# Wear the owned upgrades on the hull — the same parts shown in the station's
+	# try-on preview, scaled to the in-game model.
+	ShipLoadoutVisuals.attach(ship, PlayerProfile.owned_upgrades, UpgradeSystem.all_upgrades(), SHIP_MODEL_SCALE)
 	return ship
 
 ## Builds a ship's visuals, collision, weapon, and cargo onto `ship` (whose
@@ -353,7 +360,9 @@ func _assemble_ship(ship: ShipController, hull_color: Color) -> void:
 	col.shape = shape
 	ship.add_child(col)
 	ship.collision_layer = LAYER_PLAYER_SHIP
-	ship.collision_mask = LAYER_ENVIRONMENT
+	# Collide with solid rocks/debris and with enemy drones, so ramming either one
+	# triggers the impact response (damage + bounce + shake) in ShipController.
+	ship.collision_mask = LAYER_ENVIRONMENT | LAYER_ENEMY
 
 	# Primary weapon mounted at the nose; its bolts damage the enemy layer.
 	var wc := WeaponController.new()
@@ -396,33 +405,63 @@ func _build_hud(ship: ShipController) -> void:
 
 func _build_asteroids() -> void:
 	var meshes := _load_asteroid_meshes()   # the 3 rock meshes from the GLB
+	if meshes.is_empty():
+		_build_placeholder_asteroids()       # model not imported yet → procedural spheres
+		return
+
+	# Render the whole field with one MultiMesh per rock mesh (≈3 draw calls instead
+	# of one per rock), and give each rock a collision-only StaticBody (no per-rock
+	# MeshInstance), so 140 rocks are cheap to draw but still solid. (FPS win.)
+	var counts: Array[int] = []
+	for i in meshes.size():
+		counts.append(0)
+	var plans: Array = []
 	for i in ASTEROID_COUNT:
-		# Solid rock: a StaticBody3D on the environment layer so the ship stops on it.
+		var mi := _rng.randi() % meshes.size()
+		counts[mi] += 1
+		var pos := _random_unit() * _rng.randf_range(40.0, 260.0)   # shell keeps spawn clear
+		var rot := Vector3(_rng.randf() * TAU, _rng.randf() * TAU, _rng.randf() * TAU)
+		var target_r := _rng.randf_range(2.0, 7.0)   # gameplay radius, independent of model size
+		var aabb: AABB = meshes[mi].get_aabb()
+		var s := target_r / maxf(0.01, aabb.size.length() * 0.5)
+		var basis := Basis.from_euler(rot).scaled(Vector3.ONE * s)
+		var xform := Transform3D(basis, pos - basis * aabb.get_center())   # centre on origin
+		plans.append({"mi": mi, "xform": xform, "pos": pos, "col_r": target_r * 0.6})
+
+	var slots: Array = []
+	for mi in meshes.size():
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = meshes[mi]
+		mm.instance_count = counts[mi]
+		var inst := MultiMeshInstance3D.new()
+		inst.multimesh = mm
+		add_child(inst)
+		slots.append({"mm": mm, "idx": 0})
+
+	for p in plans:
+		var slot: Dictionary = slots[p["mi"]]
+		slot["mm"].set_instance_transform(slot["idx"], p["xform"])
+		slot["idx"] += 1
 		var body := StaticBody3D.new()
 		body.collision_layer = LAYER_ENVIRONMENT
-		# Place in a shell around origin so the spawn point stays clear.
+		body.position = p["pos"]
+		var col := CollisionShape3D.new()
+		var shape := SphereShape3D.new()
+		shape.radius = p["col_r"]                  # snug sphere inside the lumpy rock
+		col.shape = shape
+		body.add_child(col)
+		add_child(body)
+
+## Fallback field of procedural sphere rocks (each its own body) for when the
+## asteroid GLB hasn't imported yet.
+func _build_placeholder_asteroids() -> void:
+	for i in ASTEROID_COUNT:
+		var body := StaticBody3D.new()
+		body.collision_layer = LAYER_ENVIRONMENT
 		body.position = _random_unit() * _rng.randf_range(40.0, 260.0)
 		body.rotation = Vector3(_rng.randf() * TAU, _rng.randf() * TAU, _rng.randf() * TAU)
-
-		var target_r := _rng.randf_range(2.0, 7.0)   # gameplay radius, independent of model size
-		if meshes.is_empty():
-			_add_placeholder_rock(body, target_r)     # model not imported yet → procedural sphere
-		else:
-			# Pick a rock mesh and uniform-scale it to the target radius, so the three
-			# differently-sized source rocks read as a consistent field.
-			var mesh: Mesh = meshes[_rng.randi() % meshes.size()]
-			var aabb := mesh.get_aabb()
-			var s := target_r / maxf(0.01, aabb.size.length() * 0.5)
-			var mi := MeshInstance3D.new()
-			mi.mesh = mesh
-			mi.scale = Vector3.ONE * s
-			mi.position = -aabb.get_center() * s       # centre the rock on the body origin
-			body.add_child(mi)
-			var col := CollisionShape3D.new()
-			var shape := SphereShape3D.new()
-			shape.radius = target_r * 0.6              # snug sphere inside the lumpy rock
-			col.shape = shape
-			body.add_child(col)
+		_add_placeholder_rock(body, _rng.randf_range(2.0, 7.0))
 		add_child(body)
 
 ## Pulls the distinct rock meshes out of the asteroid GLB once, to instance across

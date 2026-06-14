@@ -23,8 +23,10 @@ func _physics_process(delta: float) -> void:
 	_cooldown = maxf(0.0, _cooldown - delta)
 	heat = maxf(0.0, heat - weapon_def.cooldown_rate * delta)
 	# Player weapons fire from local input only on the owning peer (M5); drones use
-	# auto_fire (driven by their host-run AI). Single-player has default authority.
-	if not auto_fire and is_multiplayer_authority() and Input.is_action_pressed(fire_action):
+	# auto_fire (driven by their host-run AI). In single-player no peer is assigned,
+	# so the authority gate only applies once a multiplayer peer exists.
+	var owns_input := not multiplayer.has_multiplayer_peer() or is_multiplayer_authority()
+	if not auto_fire and owns_input and Input.is_action_pressed(fire_action):
 		try_fire()
 
 ## Returns true if a bolt was actually fired (not on cooldown / overheated).

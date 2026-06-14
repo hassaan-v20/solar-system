@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="UpgradeDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/upgrade_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+upgrade_id = "shield_capacitor_2"
+display_name = "Shield Capacitor II"
+description = "+20% shield"
+cost = 550
+stat = "shield_max"
+mult = 1.2
+add = 0.0

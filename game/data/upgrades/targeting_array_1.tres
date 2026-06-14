@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="UpgradeDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/upgrade_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+upgrade_id = "targeting_array_1"
+display_name = "Targeting Array I"
+description = "+1 weapon hardpoint"
+cost = 420
+stat = "weapon_slots"
+mult = 1.0
+add = 1.0

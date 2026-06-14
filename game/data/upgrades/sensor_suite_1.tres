@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="UpgradeDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/upgrade_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+upgrade_id = "sensor_suite_1"
+display_name = "Sensor Suite I"
+description = "+1 utility slot"
+cost = 360
+stat = "utility_slots"
+mult = 1.0
+add = 1.0
