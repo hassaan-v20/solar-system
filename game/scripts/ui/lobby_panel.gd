@@ -48,8 +48,11 @@ func close() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not _open:
 		return
-	if event.is_action_pressed("ui_cancel") or event.is_action_pressed("toggle_settings") \
-			or event.is_action_pressed("dock"):
+	# NOTE: do NOT close on "dock". ✕ (JOY_BUTTON_A) is bound to BOTH "dock" and the
+	# menu's "ui_accept"; closing on the dock *press* hides the panel before the
+	# focused button fires on *release*, so Launch (and every other action) silently
+	# never runs on a controller. Close via Esc / ○ (ui_cancel), Options, or Close.
+	if event.is_action_pressed("ui_cancel") or event.is_action_pressed("toggle_settings"):
 		close()
 		get_viewport().set_input_as_handled()
 
@@ -127,15 +130,22 @@ func _build_launch() -> Control:
 		row.add_child(host)
 		var ip := LineEdit.new()
 		ip.text = "127.0.0.1"
+		ip.placeholder_text = "host or host:port"
 		ip.custom_minimum_size = Vector2(190, 0)
+		ip.select_all_on_focus = true   # typing replaces the default instead of appending
+		var do_join := func() -> void: Net.join_game(ip.text.strip_edges())
+		ip.text_submitted.connect(func(_t: String) -> void: do_join.call())  # Enter joins
 		row.add_child(ip)
 		var join := Button.new()
 		join.text = "Join"
-		join.pressed.connect(func() -> void: Net.join_game(ip.text.strip_edges()))
+		join.pressed.connect(do_join)
 		row.add_child(join)
 		_content.add_child(row)
+		# The panel never granted focus, so typing only worked if a click landed
+		# cleanly — flaky right after mouse-capture is released. Grab it explicitly.
+		ip.call_deferred("grab_focus")
 	elif Net.is_host():
-		_label("Share an address below (Tailscale = the 100.x one), then Join from the other PC:")
+		_label("LAN: share a 192.x address below. Over the internet: share your playit.gg tunnel as host:port.")
 		_label(_local_ips_text())
 		var launch := Button.new()
 		launch.text = "▶  Launch Co-op raid"

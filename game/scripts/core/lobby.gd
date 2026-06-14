@@ -180,7 +180,7 @@ func _build_ui() -> void:
 	layer.add_child(title)
 
 	var hint := Label.new()
-	hint.text = "Fly to a bay and press F   ·   W/S thrust   mouse aim   Q/E strafe   Shift boost   Ctrl brake   F8 quit"
+	hint.text = "Fly to a bay and press F / ✕   ·   W/S thrust   mouse aim   Q/E strafe   Shift boost   Ctrl brake   F8 quit"
 	hint.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.modulate = Color(1, 1, 1, 0.45)

@@ -46,6 +46,14 @@ func host_game(port: int = DEFAULT_PORT) -> bool:
 	return true
 
 func join_game(address: String, port: int = DEFAULT_PORT) -> bool:
+	# Accept "host:port" (e.g. a playit.gg tunnel address); a bare host keeps DEFAULT_PORT.
+	# Split on a single colon only, so IPv6 literals (multiple colons) aren't mangled.
+	if address.count(":") == 1:
+		var parts := address.split(":")
+		var parsed_port := int(parts[1])
+		if parsed_port > 0:
+			address = parts[0]
+			port = parsed_port
 	var peer := ENetMultiplayerPeer.new()
 	var err := peer.create_client(address, port)
 	if err != OK:
