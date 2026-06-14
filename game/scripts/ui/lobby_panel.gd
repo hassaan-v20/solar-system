@@ -135,11 +135,21 @@ func _build_launch() -> Control:
 		row.add_child(join)
 		_content.add_child(row)
 	elif Net.is_host():
+		_label("Share an address below (Tailscale = the 100.x one), then Join from the other PC:")
+		_label(_local_ips_text())
 		var launch := Button.new()
 		launch.text = "▶  Launch Co-op raid"
 		launch.pressed.connect(_launch_coop)
 		_content.add_child(launch)
 	return solo
+
+## The host's IPv4 addresses to share (keeps Tailscale's 100.x; drops loopback/link-local).
+func _local_ips_text() -> String:
+	var out := ""
+	for a in IP.get_local_addresses():
+		if a.count(".") == 3 and not a.begins_with("127.") and not a.begins_with("169.254"):
+			out += ("" if out.is_empty() else ", ") + a
+	return out if not out.is_empty() else "(no IPv4 found)"
 
 func _build_upgrades() -> Control:
 	_title("UPGRADES")

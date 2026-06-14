@@ -18,6 +18,11 @@ const SPAWN_MIN := 80.0
 const SPAWN_MAX := 130.0
 
 var ship: ShipController
+# Co-op: target a random one of several players, and spawn drones through a
+# networked callback (host-authoritative) instead of locally. Solo leaves both
+# unset, so the single-ship local-spawn path below is unchanged.
+var players: Array = []
+var spawn_override: Callable = Callable()
 var active: bool = true
 
 var _heat: float = 0.0
@@ -44,7 +49,7 @@ func _on_mission_state(state: String) -> void:
 		active = false   # the run is over; stop hunting
 
 func _process(delta: float) -> void:
-	if not active or ship == null or not is_instance_valid(ship):
+	if not active or _target() == null:
 		return
 	_heat = clampf(_heat + delta / TIME_TO_MAX, 0.0, 1.0)
 	# Throttle the HUD signal; the value barely moves frame to frame.
@@ -60,14 +65,30 @@ func _process(delta: float) -> void:
 func _spawn_wave() -> void:
 	if get_tree().get_nodes_in_group("enemies").size() >= MAX_ALIVE:
 		return
+	var t := _target()
+	if t == null:
+		return
 	var count := 1 + int(round(_heat * 2.0))   # 1..3 drones, scaling with heat
 	for i in count:
-		var drone := EnemyDrone.new()
-		if _enemy_def != null:
-			drone.enemy_def = _enemy_def
-		drone.target = ship
-		drone.position = ship.global_position + _rand_dir() * _rng.randf_range(SPAWN_MIN, SPAWN_MAX)
-		get_parent().add_child(drone)
+		var pos: Vector3 = t.global_position + _rand_dir() * _rng.randf_range(SPAWN_MIN, SPAWN_MAX)
+		if spawn_override.is_valid():
+			spawn_override.call(_enemy_def, pos)   # co-op: host spawns via the network
+		else:
+			var drone := EnemyDrone.new()
+			if _enemy_def != null:
+				drone.enemy_def = _enemy_def
+			drone.target = t
+			drone.position = pos
+			get_parent().add_child(drone)
+
+## The ship a wave should home in on: a random live player in co-op, else the solo ship.
+func _target() -> Node3D:
+	if not players.is_empty():
+		var live := players.filter(func(p: Node) -> bool: return is_instance_valid(p))
+		return live.pick_random() if not live.is_empty() else null
+	if ship != null and is_instance_valid(ship):
+		return ship
+	return null
 
 func _rand_dir() -> Vector3:
 	# Bias toward the horizontal plane so threats come from around, not above/below.

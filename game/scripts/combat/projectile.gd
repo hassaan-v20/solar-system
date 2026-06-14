@@ -11,6 +11,9 @@ var lifetime: float = 4.0
 # Newtonian gunnery: a bolt inherits the shooter's velocity, so its true path is
 # the muzzle vector PLUS the ship's drift. Set by WeaponController at fire time.
 var inherited_velocity: Vector3 = Vector3.ZERO
+# Co-op: the host's bolt is authoritative and deals damage; client copies are
+# visual-only (collision off) and kept in sync by the same deterministic motion.
+var damaging: bool = true
 var _color: Color = Color(0.4, 0.9, 1.0)
 var _life: float = 0.0
 
@@ -44,12 +47,16 @@ func _ready() -> void:
 	add_child(col)
 
 	body_entered.connect(_on_body_entered)
+	if not damaging:
+		collision_mask = 0   # client-side visual copy: detects nothing
 
 func _physics_process(delta: float) -> void:
 	# Muzzle velocity along the bolt's own −Z, plus the shooter's inherited drift.
 	global_position += (-global_transform.basis.z * speed + inherited_velocity) * delta
 	_life += delta
-	if _life >= lifetime:
+	# Damaging bolts (host/solo) self-despawn; client copies wait for the host's
+	# spawner despawn, with a long safety net so a missed packet can't leak them.
+	if _life >= lifetime and (damaging or _life >= lifetime * 4.0):
 		queue_free()
 
 func _on_body_entered(body: Node) -> void:

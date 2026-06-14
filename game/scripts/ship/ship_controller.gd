@@ -61,6 +61,11 @@ func _physics_process(_delta: float) -> void:
 	var mine := is_multiplayer_authority()
 	if freeze == mine:
 		freeze = not mine
+	# Death is host-authoritative in co-op: hull is replicated from the host, so a
+	# client whose ship the host killed goes dead here even though apply_damage ran
+	# on the host. (In solo, apply_damage already set this.)
+	if alive and current_hull <= 0.0:
+		alive = false
 	if mine and alive and not Settings.input_locked and Input.is_action_just_pressed("toggle_assist"):
 		flight_assist = not flight_assist
 

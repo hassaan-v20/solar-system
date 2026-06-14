@@ -71,6 +71,10 @@ func _build_weapon() -> void:
 	add_child(_weapon)
 
 func _physics_process(delta: float) -> void:
+	# Host-authoritative: only the owning peer (the host, in co-op) runs the AI;
+	# clients are puppets posed by the MultiplayerSynchronizer. Always true in solo.
+	if not is_multiplayer_authority():
+		return
 	if target == null or not is_instance_valid(target):
 		# No target: coast to rest (momentum, not an instant stop).
 		velocity = velocity.move_toward(Vector3.ZERO, enemy_def.accel * delta)

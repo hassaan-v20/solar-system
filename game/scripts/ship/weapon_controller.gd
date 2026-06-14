@@ -33,13 +33,19 @@ func try_fire() -> bool:
 		return false
 	if heat + weapon_def.heat_per_shot > weapon_def.max_heat:
 		return false
-	var muzzle := global_transform * muzzle_offset
-	var bolt := Projectile.new()
-	bolt.setup(weapon_def.damage, weapon_def.projectile_speed, target_mask, bolt_color)
-	bolt.inherited_velocity = _shooter_velocity()   # Newtonian: the bolt carries the ship's drift
-	var scene := get_tree().current_scene
-	scene.add_child(bolt)
-	bolt.global_transform = Transform3D(global_transform.basis, muzzle)
+	var xform := Transform3D(global_transform.basis, global_transform * muzzle_offset)
+	# Route through CombatNet so the bolt is host-authoritative in co-op (and still
+	# local in solo). Fall back to a direct spawn if no CombatNet is present (tests).
+	var combat := get_tree().get_first_node_in_group("combat_net")
+	if combat != null:
+		combat.fire(xform, _shooter_velocity(), weapon_def.damage, target_mask,
+			bolt_color, weapon_def.projectile_speed)
+	else:
+		var bolt := Projectile.new()
+		bolt.setup(weapon_def.damage, weapon_def.projectile_speed, target_mask, bolt_color)
+		bolt.inherited_velocity = _shooter_velocity()
+		get_tree().current_scene.add_child(bolt)
+		bolt.global_transform = xform
 	_cooldown = 1.0 / maxf(0.01, weapon_def.fire_rate)
 	heat += weapon_def.heat_per_shot
 	return true

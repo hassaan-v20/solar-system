@@ -48,6 +48,8 @@ const LAYER_ENEMY := 4
 
 const RESULTS_SCENE := "res://scenes/station/results_screen.tscn"
 const RESULTS_DELAY := 2.5      # let the end-of-mission overlay / explosion read
+const DRONE_DEF_PATH := "res://data/enemies/light_drone.tres"
+const COMBAT_NET_SCRIPT := "res://scripts/net/combat_net.gd"
 
 # Hull tints per player slot so co-op ships are distinguishable.
 const PEER_HULL_COLORS := [
@@ -65,6 +67,8 @@ var _mission_def: MissionDef
 var _drones_killed: int = 0
 var _run_finished: bool = false
 var _spawner: MultiplayerSpawner
+var _enemy_spawner: MultiplayerSpawner   # co-op: host spawns drones, replicated to all
+var _coop_ships: Array = []              # the player ships (host-side, for drone targeting)
 
 func _ready() -> void:
 	_setup_input()
@@ -83,8 +87,14 @@ func _ready() -> void:
 	else:
 		_build_solo()
 
+## Host-authoritative projectile layer (works in solo too; WeaponController finds it
+## via the "combat_net" group). One per combat scene.
+func _build_combat_net() -> void:
+	add_child((load(COMBAT_NET_SCRIPT) as GDScript).new())
+
 ## Single-player: own ship + camera + HUD + the full Ghost Station mission.
 func _build_solo() -> void:
+	_build_combat_net()
 	_ship = _build_ship()
 	_build_camera(_ship)
 	_build_hud(_ship)
@@ -105,6 +115,8 @@ func _build_solo() -> void:
 # ── co-op (M5 Phase 1b): each player flies their own ship in the shared sector;
 # mission / drones come in later phases. ───────────────────────────────────────
 func _setup_coop() -> void:
+	_build_combat_net()   # host-authoritative bolts, replicated to all peers
+
 	var ships_root := Node3D.new()
 	ships_root.name = "Ships"
 	add_child(ships_root)
@@ -113,6 +125,15 @@ func _setup_coop() -> void:
 	add_child(_spawner)
 	_spawner.spawn_path = _spawner.get_path_to(ships_root)
 	_spawner.spawn_function = _spawn_ship
+
+	# Drones: built identically on every peer (so they replicate), host drives the AI.
+	var enemies_root := Node3D.new()
+	enemies_root.name = "Enemies"
+	add_child(enemies_root)
+	_enemy_spawner = MultiplayerSpawner.new()
+	add_child(_enemy_spawner)
+	_enemy_spawner.spawn_path = _enemy_spawner.get_path_to(enemies_root)
+	_enemy_spawner.spawn_function = _spawn_drone
 
 	# Spawn only once everyone has loaded (host-side), then announce we're in.
 	Net.all_peers_in_raid.connect(_on_all_in_raid)
@@ -124,8 +145,17 @@ func _on_all_in_raid(peer_ids: Array) -> void:
 		return
 	var sorted := peer_ids.duplicate()
 	sorted.sort()   # deterministic slot assignment (host = peer 1 = slot 0)
+	_coop_ships.clear()
 	for slot in sorted.size():
-		_spawner.spawn({"peer": sorted[slot], "slot": slot})
+		var s: Node = _spawner.spawn({"peer": sorted[slot], "slot": slot})
+		if s != null:
+			_coop_ships.append(s)
+
+	# Host-only: escalating drone waves that hunt the players, spawned across the wire.
+	var heat := HeatDirector.new()
+	heat.players = _coop_ships
+	heat.spawn_override = _coop_spawn_drone
+	add_child(heat)
 
 ## Runs on EVERY peer (driven by the spawner) to build the same ship locally.
 func _spawn_ship(data: Dictionary) -> Node:
@@ -139,8 +169,9 @@ func _spawn_ship(data: Dictionary) -> Node:
 	ship.ship_def = (base_def as ShipDef).duplicate()
 	_assemble_ship(ship, PEER_HULL_COLORS[slot % PEER_HULL_COLORS.size()])
 	ship.position = Vector3(slot * 18.0 - 9.0, 0.0, 0.0)
-	_add_ship_synchronizer(ship)
-	ship.set_multiplayer_authority(peer_id)   # recursive: weapon + synchronizer too
+	var hsync := _add_ship_synchronizer(ship)
+	ship.set_multiplayer_authority(peer_id)   # recursive: transform sync + weapon
+	hsync.set_multiplayer_authority(1)         # but HEALTH is host-authoritative (damage adjudicated there)
 	var mine := " (MINE)" if peer_id == multiplayer.get_unique_id() else ""
 	print("raid: spawned %s authority=%d slot=%d%s" % [ship.name, peer_id, slot, mine])
 	if peer_id == multiplayer.get_unique_id():
@@ -152,18 +183,67 @@ func _attach_local_view(ship: ShipController) -> void:
 	_build_camera(ship)
 	_build_hud(ship)
 
-## Replicates transform (every frame) and health (on change) from the owning peer.
-func _add_ship_synchronizer(ship: ShipController) -> void:
+## Two synchronizers with SPLIT authority: transform replicates from the owning peer
+## (they fly their ship), health replicates from the host (it adjudicates damage).
+## Returns the health synchronizer so the caller can set its authority to the host.
+func _add_ship_synchronizer(ship: ShipController) -> MultiplayerSynchronizer:
+	var tcfg := SceneReplicationConfig.new()
+	for path in [NodePath(".:position"), NodePath(".:rotation")]:
+		tcfg.add_property(path)
+		tcfg.property_set_replication_mode(path, SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
+	var tsync := MultiplayerSynchronizer.new()
+	tsync.name = "XformSync"
+	tsync.replication_config = tcfg
+	ship.add_child(tsync)
+
+	var hcfg := SceneReplicationConfig.new()
+	for path in [NodePath(".:current_hull"), NodePath(".:current_shield")]:
+		hcfg.add_property(path)
+		hcfg.property_set_replication_mode(path, SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
+	var hsync := MultiplayerSynchronizer.new()
+	hsync.name = "HealthSync"
+	hsync.replication_config = hcfg
+	ship.add_child(hsync)
+	return hsync
+
+# ── co-op drones (host-authoritative, replicated to all peers) ──────────────────
+## Built on EVERY peer by the enemy spawner; the host owns AI + health.
+func _spawn_drone(data: Dictionary) -> Node:
+	var drone := EnemyDrone.new()
+	drone.enemy_def = load(DRONE_DEF_PATH)
+	var p: Array = data["pos"]
+	drone.position = Vector3(p[0], p[1], p[2])
+	_add_drone_synchronizer(drone)
+	drone.set_multiplayer_authority(1)   # the host runs the AI; clients are puppets
+	return drone
+
+## Host: spawn a drone through the enemy spawner (replicated) and aim it at the
+## nearest player. Passed to HeatDirector as its spawn_override.
+func _coop_spawn_drone(_def: EnemyDef, pos: Vector3) -> void:
+	var drone: Node = _enemy_spawner.spawn({"pos": [pos.x, pos.y, pos.z]})
+	if drone != null:
+		drone.target = _nearest_player(pos)
+
+func _nearest_player(pos: Vector3) -> Node3D:
+	var best: Node3D = null
+	var best_d := INF
+	for s in _coop_ships:
+		if not is_instance_valid(s):
+			continue
+		var d: float = (s as Node3D).global_position.distance_to(pos)
+		if d < best_d:
+			best_d = d
+			best = s
+	return best
+
+func _add_drone_synchronizer(drone: Node) -> void:
 	var cfg := SceneReplicationConfig.new()
 	for path in [NodePath(".:position"), NodePath(".:rotation")]:
 		cfg.add_property(path)
 		cfg.property_set_replication_mode(path, SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
-	for path in [NodePath(".:current_hull"), NodePath(".:current_shield")]:
-		cfg.add_property(path)
-		cfg.property_set_replication_mode(path, SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
 	var sync := MultiplayerSynchronizer.new()
 	sync.replication_config = cfg
-	ship.add_child(sync)
+	drone.add_child(sync)
 
 func _seed_rng() -> void:
 	if Net.active:
