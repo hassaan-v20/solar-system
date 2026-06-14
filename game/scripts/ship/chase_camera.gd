@@ -22,6 +22,7 @@ func _ready() -> void:
 	_target = get_node_or_null(target_path) as Node3D
 	_ship = _target as ShipController
 	fov = base_fov
+	far = 8000.0   # reach far enough to render distant backdrops (e.g. the planet)
 	EventBus.ship_hit.connect(_on_ship_hit)
 	if _target != null:
 		global_position = _desired_position()  # snap behind the ship on frame 1

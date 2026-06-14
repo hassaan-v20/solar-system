@@ -76,6 +76,7 @@ func _ready() -> void:
 	_seed_rng()
 	# Shared, deterministic sector (built identically on every peer from the seed).
 	_build_environment()
+	_build_planet()
 	_build_asteroids()
 	if Net.active:
 		_setup_coop()
@@ -206,82 +207,8 @@ func _apply_fullscreen(on: bool) -> void:
 
 # ── input ─────────────────────────────────────────────────────────────────────
 func _setup_input() -> void:
-	# Registered in code so project.godot stays clean and layout-independent.
-	var binds := {
-		"thrust_forward": [KEY_W],
-		"thrust_back": [KEY_S],
-		"strafe_left": [KEY_Q],
-		"strafe_right": [KEY_E],
-		"thrust_up": [KEY_SPACE],
-		"thrust_down": [KEY_C],
-		"roll_left": [KEY_A],
-		"roll_right": [KEY_D],
-		"boost": [KEY_SHIFT],
-		"brake": [KEY_CTRL],
-		"toggle_assist": [KEY_Z],
-		"dock": [KEY_F],
-		"toggle_settings": [KEY_ESCAPE],
-		"toggle_fullscreen": [KEY_F11],
-		"quit_game": [KEY_F8],
-	}
-	for action in binds:
-		if not InputMap.has_action(action):
-			InputMap.add_action(action)
-		for key in binds[action]:
-			var ev := InputEventKey.new()
-			ev.physical_keycode = key
-			InputMap.action_add_event(action, ev)
-
-	# Primary fire on the left mouse button (works while the mouse is captured).
-	if not InputMap.has_action("fire_primary"):
-		InputMap.add_action("fire_primary")
-	var fire_ev := InputEventMouseButton.new()
-	fire_ev.button_index = MOUSE_BUTTON_LEFT
-	InputMap.action_add_event("fire_primary", fire_ev)
-
-	_setup_gamepad()
-
-## Gamepad (DualSense and any SDL-mapped pad). Bound to the SAME actions as the
-## keyboard/mouse, so both work at once — the right stick steers as a turn rate
-## (see ShipController._integrate_rotation). Pilot layer only; co-op roles come in M5.
-func _setup_gamepad() -> void:
-	# Digital actions → face/shoulder buttons. (PlayStation: A=Cross, B=Circle.)
-	var pad_buttons := {
-		"roll_left": JOY_BUTTON_LEFT_SHOULDER,    # L1
-		"roll_right": JOY_BUTTON_RIGHT_SHOULDER,  # R1
-		"brake": JOY_BUTTON_B,                     # Circle
-		"toggle_assist": JOY_BUTTON_X,             # Square
-		"toggle_settings": JOY_BUTTON_START,       # Options
-		"dock": JOY_BUTTON_A,                      # Cross
-	}
-	for action in pad_buttons:
-		var be := InputEventJoypadButton.new()
-		be.button_index = pad_buttons[action]
-		InputMap.action_add_event(action, be)
-
-	# Analog actions → stick/trigger axes, as [axis, direction]. Left stick flies,
-	# right stick steers (look_* are new, gamepad-only), triggers fire/boost.
-	var pad_axes := {
-		"thrust_forward": [JOY_AXIS_LEFT_Y, -1.0],
-		"thrust_back": [JOY_AXIS_LEFT_Y, 1.0],
-		"strafe_left": [JOY_AXIS_LEFT_X, -1.0],
-		"strafe_right": [JOY_AXIS_LEFT_X, 1.0],
-		"look_left": [JOY_AXIS_RIGHT_X, -1.0],
-		"look_right": [JOY_AXIS_RIGHT_X, 1.0],
-		"look_up": [JOY_AXIS_RIGHT_Y, -1.0],
-		"look_down": [JOY_AXIS_RIGHT_Y, 1.0],
-		"boost": [JOY_AXIS_TRIGGER_LEFT, 1.0],     # L2
-		"fire_primary": [JOY_AXIS_TRIGGER_RIGHT, 1.0],  # R2
-	}
-	for action in pad_axes:
-		if not InputMap.has_action(action):
-			InputMap.add_action(action)
-		var me := InputEventJoypadMotion.new()
-		me.axis = pad_axes[action][0]
-		me.axis_value = pad_axes[action][1]
-		InputMap.action_add_event(action, me)
-		# Lower than the 0.5 default so the sticks/triggers feel responsive.
-		InputMap.action_set_deadzone(action, 0.2)
+	# Shared with the flyable lobby; registered in code (project.godot stays clean).
+	InputSetup.configure()
 
 # ── world ─────────────────────────────────────────────────────────────────────
 func _build_environment() -> void:
@@ -298,13 +225,17 @@ func _build_environment() -> void:
 	env.background_mode = Environment.BG_SKY
 	var sky := Sky.new()
 	var sky_mat := PanoramaSkyMaterial.new()
-	sky_mat.panorama = load("res://assets/textures/8k_stars_milky_way.jpg")
+	sky_mat.panorama = load("res://assets/textures/sky/nebula_raid_multi.hdr")   # dramatic multi-colour nebula
 	sky.sky_material = sky_mat
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.12, 0.14, 0.20)
 	env.ambient_light_energy = 0.6
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
+	# Gentle cinematic grade: a touch more contrast + saturation.
+	env.adjustment_enabled = true
+	env.adjustment_contrast = 1.05
+	env.adjustment_saturation = 1.18
 
 	# Soft, wide bloom so engines/bolts/explosions read as glowing light sources.
 	env.glow_enabled = true
@@ -323,6 +254,16 @@ func _build_environment() -> void:
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
+
+## Phoenix as a far backdrop for the first mission area. Loaded by path so the new
+## PlanetBackdrop class works before the editor refreshes its class cache; it picks
+## 1K or 4K itself from how big it appears here.
+func _build_planet() -> void:
+	var planet: Node3D = (load("res://scripts/core/planet_backdrop.gd") as GDScript).new()
+	planet.radius = 700.0
+	planet.viewer = Vector3.ZERO            # the player spawns near origin
+	planet.position = Vector3(-1000, 520, -2550)   # off to one side, beyond the station
+	add_child(planet)
 
 func _build_ship() -> ShipController:
 	var ship := ShipController.new()
@@ -488,8 +429,13 @@ func _build_station(distance: float) -> ShipZone:
 	# Visual hull: the imported GLB station (recentered + scaled). The dock zone
 	# below still works even if the model hasn't imported yet.
 	var model := _spawn_model(STATION_MODEL_PATH, STATION_MODEL_SCALE, STATION_MODEL_EULER, STATION_MODEL_CENTER)
+	var station_radius := 0.0
 	if model != null:
 		station.add_child(model)
+		# Make the derelict solid: trimesh colliders that follow the visible hull, so
+		# you crash into it / fly through its gaps instead of phasing through.
+		_add_solid_collision(model)
+		station_radius = _model_bounds_radius(station, model)
 
 	# The Data Core itself — a glowing server rack at the station's heart, so the
 	# objective you hack out is something you can see and fly toward.
@@ -509,14 +455,58 @@ func _build_station(distance: float) -> ShipZone:
 	beacon.omni_range = 300.0
 	station.add_child(beacon)
 
-	# Big trigger (you dock once inside the station's reach) but a small marker orb
-	# so it doesn't render as a giant translucent dome over the structure.
+	# Dock trigger. Now that the hull is solid, make sure the trigger reaches the
+	# station's exterior so you can still dock on approach (rather than needing to
+	# fly inside a solid shell); never smaller than the original reach.
 	var dock := ShipZone.new()
-	dock.radius = 130.0
+	dock.radius = maxf(130.0, station_radius + 20.0)
 	dock.marker_radius = 22.0
 	dock.marker_color = Color(0.3, 0.7, 1.0)
 	station.add_child(dock)
 	return dock
+
+## Gives every mesh in a spawned model a trimesh StaticBody on the environment
+## layer, turning the visible geometry solid. Trimesh follows the real hull, so
+## openings stay flyable; ship/asteroid masks already collide with this layer.
+func _add_solid_collision(model: Node3D) -> void:
+	var meshes: Array = []
+	_collect_mesh_instances(model, meshes)
+	for mi in meshes:
+		var inst := mi as MeshInstance3D
+		if inst.mesh == null:
+			continue
+		var body := StaticBody3D.new()
+		body.collision_layer = LAYER_ENVIRONMENT
+		body.collision_mask = 0
+		var col := CollisionShape3D.new()
+		col.shape = inst.mesh.create_trimesh_shape()
+		body.add_child(col)
+		inst.add_child(body)
+
+func _collect_mesh_instances(node: Node, out: Array) -> void:
+	if node is MeshInstance3D:
+		out.append(node)
+	for c in node.get_children():
+		_collect_mesh_instances(c, out)
+
+## World-space bounding radius of a spawned model around `center_node`'s origin —
+## used to size the dock trigger so it clears the now-solid hull.
+func _model_bounds_radius(center_node: Node3D, model: Node3D) -> float:
+	var meshes: Array = []
+	_collect_mesh_instances(model, meshes)
+	var center := center_node.global_position
+	var r := 0.0
+	for mi in meshes:
+		var inst := mi as MeshInstance3D
+		var ab := inst.get_aabb()
+		var gt := inst.global_transform
+		for i in 8:
+			var corner := ab.position + Vector3(
+				ab.size.x if (i & 1) != 0 else 0.0,
+				ab.size.y if (i & 2) != 0 else 0.0,
+				ab.size.z if (i & 4) != 0 else 0.0)
+			r = maxf(r, (gt * corner).distance_to(center))
+	return r
 
 func _build_mission(ship: ShipController, dock: ShipZone, mdef: MissionDef) -> void:
 	var mm := MissionManager.new()

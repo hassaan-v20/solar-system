@@ -1,0 +1,3 @@
+Nebula skyboxes from spacespheremaps.com — free for personal and commercial use.
+  nebula_lobby_blue.hdr  = "Blue Nebulae 1"
+  nebula_raid_multi.hdr  = "Multi Nebulae 1"

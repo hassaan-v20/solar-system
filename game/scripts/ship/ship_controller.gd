@@ -36,6 +36,8 @@ func _ready() -> void:
 	linear_damp = 0.0
 	angular_damp = 0.0
 	can_sleep = false
+	# Sweep collisions so a fast ship can't tunnel through thin hull/asteroid geometry.
+	continuous_cd = true
 	mass = ship_def.mass
 	freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
 	freeze = not is_multiplayer_authority()

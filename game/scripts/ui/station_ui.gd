@@ -48,9 +48,12 @@ func _update_hint() -> void:
 	_hint_label.text = MenuNav.hint_text(_current_device)
 
 func _build_ui() -> void:
+	# Translucent panel down the left so the 3D station (lobby_backdrop) stays
+	# visible on the right. A faint gradient toward the edge keeps text readable.
 	var bg := ColorRect.new()
-	bg.color = Color(0.04, 0.05, 0.08)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bg.color = Color(0.03, 0.04, 0.07, 0.62)
+	bg.set_anchors_preset(Control.PRESET_LEFT_WIDE)
+	bg.offset_right = 600.0
 	add_child(bg)
 
 	var root := VBoxContainer.new()

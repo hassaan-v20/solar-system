@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3]
 
-[ext_resource type="Script" path="res://scripts/ui/station_ui.gd" id="1_station"]
+[ext_resource type="Script" path="res://scripts/core/lobby.gd" id="1_lobby"]
 
-[node name="StationHub" type="Control"]
-script = ExtResource("1_station")
+[node name="StationHub" type="Node3D"]
+script = ExtResource("1_lobby")
