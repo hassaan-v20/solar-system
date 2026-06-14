@@ -15,12 +15,18 @@ config/features=PackedStringArray("4.6", "Forward Plus")
 EventBus="*res://scripts/core/event_bus.gd"
 PlayerProfile="*res://scripts/economy/player_profile.gd"
 Net="*res://scripts/net/network_manager.gd"
+Settings="*res://scripts/core/settings.gd"
 
 [display]
 
 window/size/mode=3
 window/size/viewport_width=1600
 window/size/viewport_height=900
+# Content scaling: lay the UI out at the 1600x900 reference and scale it to fill the
+# real (often hi-DPI) resolution, so the HUD/markers aren't tiny on big displays.
+# 3D still renders at native resolution. "expand" tolerates non-16:9 aspects.
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
 
 [rendering]
 

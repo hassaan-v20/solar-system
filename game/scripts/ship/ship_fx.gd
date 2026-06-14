@@ -19,6 +19,7 @@ const FULL_GLOW := 7.0      # emission energy at full throttle
 const BOOST_GLOW := 11.0    # emission energy while boosting
 const ENGINE_COLOR := Color(0.45, 0.85, 1.0)
 const DUST_COLOR := Color(0.6, 0.7, 0.85)
+const RCS_COLOR := Color(0.85, 0.92, 1.0)   # cold maneuvering-thruster puffs
 
 var engine_color: Color = ENGINE_COLOR   # per-ship tint; set before adding to tree
 var _ship: ShipController
@@ -26,6 +27,7 @@ var _glow_mats: Array[StandardMaterial3D] = []
 var _engine_light: OmniLight3D
 var _plume: GPUParticles3D
 var _dust: GPUParticles3D
+var _rcs: Dictionary = {}         # push-direction -> GPUParticles3D maneuvering thruster
 var _level: float = 0.0          # smoothed 0..1+ engine intensity
 var _last_pos: Vector3            # for measuring speed from position delta
 
@@ -36,6 +38,7 @@ func _ready() -> void:
 	_build_engines()
 	_build_plume()
 	_build_dust()
+	_build_rcs()
 
 func _process(delta: float) -> void:
 	if _ship == null or _ship.ship_def == null or delta <= 0.0:
@@ -67,6 +70,25 @@ func _process(delta: float) -> void:
 	if _dust != null:
 		# Dust only fades in once you're actually moving fast, so slow flight stays calm.
 		_dust.amount_ratio = smoothstep(0.35, 1.0, speed_ratio)
+	_update_rcs()
+
+## Fire each maneuvering thruster in proportion to the ship's lateral/vertical
+## thrust this frame (a thruster fires opposite the push, Newton's third law), so
+## strafing and flight-assist drift-correction read as little RCS puffs. Owner-only:
+## rcs_local is 0 on networked puppets, so they simply show no puffs.
+func _update_rcs() -> void:
+	if _ship == null:
+		return
+	var r: Vector3 = _ship.rcs_local
+	_set_rcs("right", maxf(0.0, r.x))
+	_set_rcs("left", maxf(0.0, -r.x))
+	_set_rcs("up", maxf(0.0, r.y))
+	_set_rcs("down", maxf(0.0, -r.y))
+
+func _set_rcs(key: String, amount: float) -> void:
+	var p: GPUParticles3D = _rcs.get(key)
+	if p != null:
+		p.amount_ratio = clampf(amount, 0.0, 1.0)
 
 func _build_engines() -> void:
 	_engine_light = OmniLight3D.new()
@@ -154,6 +176,47 @@ func _build_dust() -> void:
 	_dust.amount_ratio = 0.0
 	_dust.emitting = true
 	add_child(_dust)
+
+## Four small maneuvering thrusters. Each is keyed by the push direction it
+## produces and mounted on the OPPOSITE side, venting outward — so the "right"
+## thruster sits on the left flank and pushes the ship right. _update_rcs flares
+## them from the ship's per-axis RCS effort.
+func _build_rcs() -> void:
+	_rcs["right"] = _make_rcs(Vector3(-0.55, 0.0, -0.5), Vector3(-1, 0, 0))
+	_rcs["left"] = _make_rcs(Vector3(0.55, 0.0, -0.5), Vector3(1, 0, 0))
+	_rcs["up"] = _make_rcs(Vector3(0.0, -0.4, -0.5), Vector3(0, -1, 0))
+	_rcs["down"] = _make_rcs(Vector3(0.0, 0.4, -0.5), Vector3(0, 1, 0))
+
+func _make_rcs(pos: Vector3, dir: Vector3) -> GPUParticles3D:
+	var p := GPUParticles3D.new()
+	p.position = pos
+	p.amount = 20
+	p.lifetime = 0.28
+	p.local_coords = false   # puffs vent into world space as the ship maneuvers
+	p.draw_order = GPUParticles3D.DRAW_ORDER_VIEW_DEPTH
+
+	var pm := ParticleProcessMaterial.new()
+	pm.direction = dir
+	pm.spread = 14.0
+	pm.initial_velocity_min = 5.0
+	pm.initial_velocity_max = 9.0
+	pm.gravity = Vector3.ZERO
+	pm.scale_min = 0.1
+	pm.scale_max = 0.24
+	pm.color_ramp = _fade_ramp(RCS_COLOR, RCS_COLOR)
+	p.process_material = pm
+
+	var spark := SphereMesh.new()
+	spark.radius = 0.07
+	spark.height = 0.14
+	spark.radial_segments = 5
+	spark.rings = 3
+	spark.material = _glow_particle_mat()
+	p.draw_pass_1 = spark
+	p.amount_ratio = 0.0
+	p.emitting = true
+	add_child(p)
+	return p
 
 ## Unshaded, alpha-blended material that takes its color from each particle's
 ## color_ramp (delivered as vertex color). Shared shape for plume and dust.

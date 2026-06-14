@@ -8,6 +8,7 @@ enemy_id = "light_drone"
 display_name = "Light Drone"
 hull_max = 60.0
 move_speed = 26.0
+accel = 18.0
 turn_speed = 2.6
 preferred_range = 42.0
 weapon_damage = 9.0

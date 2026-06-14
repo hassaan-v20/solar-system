@@ -60,6 +60,7 @@ const PEER_HULL_COLORS := [
 var _rng := RandomNumberGenerator.new()
 var _want_capture := true
 var _ship: ShipController
+var _camera: ChaseCamera
 var _mission_def: MissionDef
 var _drones_killed: int = 0
 var _run_finished: bool = false
@@ -170,9 +171,9 @@ func _seed_rng() -> void:
 		_rng.randomize()
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("toggle_mouse"):
-		_set_capture(not _want_capture)
-	elif event.is_action_pressed("toggle_fullscreen"):
+	# The options overlay (SettingsMenu) handles "toggle_settings" itself, since it
+	# keeps processing while the game is paused — main can't, so it stays out of it.
+	if event.is_action_pressed("toggle_fullscreen"):
 		var is_fs := DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
 		_apply_fullscreen(not is_fs)
 		_set_capture(true)
@@ -183,13 +184,13 @@ func _process(_delta: float) -> void:
 	# macOS silently drops mouse capture when the window crosses displays or
 	# Spaces (the cursor reappears and steering dies). Re-assert capture every
 	# frame while focused and wanted, so it's grabbed back immediately.
-	if _want_capture and get_window().has_focus() and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+	if _want_capture and not Settings.input_locked and get_window().has_focus() and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func _notification(what: int) -> void:
-	# Immediate re-grab on focus/enter events (Cmd-Tab, mouse re-entering), but
-	# only if the player hasn't deliberately freed the mouse with Esc.
-	if not _want_capture:
+	# Immediate re-grab on focus/enter events (Cmd-Tab, mouse re-entering), but not
+	# while the options menu is open (it wants a free cursor).
+	if not _want_capture or Settings.input_locked:
 		return
 	match what:
 		NOTIFICATION_APPLICATION_FOCUS_IN, NOTIFICATION_WM_WINDOW_FOCUS_IN, NOTIFICATION_WM_MOUSE_ENTER:
@@ -211,12 +212,15 @@ func _setup_input() -> void:
 		"thrust_back": [KEY_S],
 		"strafe_left": [KEY_Q],
 		"strafe_right": [KEY_E],
+		"thrust_up": [KEY_SPACE],
+		"thrust_down": [KEY_C],
 		"roll_left": [KEY_A],
 		"roll_right": [KEY_D],
 		"boost": [KEY_SHIFT],
 		"brake": [KEY_CTRL],
+		"toggle_assist": [KEY_Z],
 		"dock": [KEY_F],
-		"toggle_mouse": [KEY_ESCAPE],
+		"toggle_settings": [KEY_ESCAPE],
 		"toggle_fullscreen": [KEY_F11],
 		"quit_game": [KEY_F8],
 	}
@@ -238,14 +242,16 @@ func _setup_input() -> void:
 	_setup_gamepad()
 
 ## Gamepad (DualSense and any SDL-mapped pad). Bound to the SAME actions as the
-## keyboard/mouse, so both work at once — only the right stick needs new code
-## (see ShipController._steer). Pilot layer only; co-op roles come in M5.
+## keyboard/mouse, so both work at once — the right stick steers as a turn rate
+## (see ShipController._integrate_rotation). Pilot layer only; co-op roles come in M5.
 func _setup_gamepad() -> void:
 	# Digital actions → face/shoulder buttons. (PlayStation: A=Cross, B=Circle.)
 	var pad_buttons := {
 		"roll_left": JOY_BUTTON_LEFT_SHOULDER,    # L1
 		"roll_right": JOY_BUTTON_RIGHT_SHOULDER,  # R1
 		"brake": JOY_BUTTON_B,                     # Circle
+		"toggle_assist": JOY_BUTTON_X,             # Square
+		"toggle_settings": JOY_BUTTON_START,       # Options
 		"dock": JOY_BUTTON_A,                      # Cross
 	}
 	for action in pad_buttons:
@@ -388,11 +394,18 @@ func _build_camera(ship: ShipController) -> void:
 	cam.target_path = ship.get_path()
 	add_child(cam)
 	cam.current = true
+	_camera = cam
 
 func _build_hud(ship: ShipController) -> void:
 	var hud := ShipHUD.new()
 	hud.ship = ship
+	hud.camera = _camera   # for the lead pip + velocity vector markers
 	add_child(hud)
+	# Options overlay (Esc / PS5 Options): toggle + tune the HUD markers in-flight.
+	# Loaded by path so it works even before the editor refreshes the global-class
+	# cache for the new SettingsMenu class (avoids the stale-cache trap).
+	var menu_script: GDScript = load("res://scripts/ui/settings_menu.gd")
+	add_child(menu_script.new())
 
 func _build_asteroids() -> void:
 	var meshes := _load_asteroid_meshes()   # the 3 rock meshes from the GLB

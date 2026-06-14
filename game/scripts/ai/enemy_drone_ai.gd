@@ -72,6 +72,9 @@ func _build_weapon() -> void:
 
 func _physics_process(delta: float) -> void:
 	if target == null or not is_instance_valid(target):
+		# No target: coast to rest (momentum, not an instant stop).
+		velocity = velocity.move_toward(Vector3.ZERO, enemy_def.accel * delta)
+		move_and_slide()
 		return
 	var to_target := target.global_position - global_position
 	var dist := to_target.length()
@@ -79,20 +82,62 @@ func _physics_process(delta: float) -> void:
 		return
 	var dir := to_target / dist
 
-	# Slew to face the player.
-	var desired := Basis.looking_at(dir, Vector3.UP)
+	# Aim where the player WILL be — its bolts inherit its velocity, so it solves
+	# the same intercept the player's lead pip does and points the nose there.
+	var aim := _lead_direction(to_target)
+	var desired := Basis.looking_at(aim, Vector3.UP)
 	global_transform.basis = global_transform.basis.slerp(desired, clampf(enemy_def.turn_speed * delta, 0.0, 1.0)).orthonormalized()
 
-	# Close to, or back off toward, the preferred range.
+	# Newtonian station-keeping: thrust to close/hold the preferred range while
+	# orbiting, accelerating toward the target velocity so momentum carries. The
+	# orbit makes it a moving target instead of a stationary one.
 	var range_err := dist - enemy_def.preferred_range
-	var want := Vector3.ZERO if absf(range_err) < 4.0 else dir * signf(range_err) * enemy_def.move_speed
-	velocity = velocity.lerp(want, clampf(2.0 * delta, 0.0, 1.0))
+	var radial := dir * clampf(range_err / 20.0, -1.0, 1.0)
+	var tangent := dir.cross(Vector3.UP)
+	if tangent.length() < 0.01:
+		tangent = dir.cross(Vector3.RIGHT)
+	tangent = tangent.normalized()
+	var desired_v := (radial + tangent * 0.6).limit_length(1.0) * enemy_def.move_speed
+	velocity = velocity.move_toward(desired_v, enemy_def.accel * delta)
 	move_and_slide()
 
-	# Fire when within engagement range and lined up.
-	var aim_dot := (-global_transform.basis.z).dot(dir)
-	if dist <= enemy_def.preferred_range * 1.6 and aim_dot > 0.95:
+	# Fire only when actually lined up on the lead point and in range.
+	var aim_dot := (-global_transform.basis.z).dot(aim)
+	if dist <= enemy_def.preferred_range * 1.8 and aim_dot > 0.992:
 		_weapon.try_fire()
+
+## Where to point so a bolt (muzzle speed + our own inherited velocity) intercepts
+## the moving target. Falls back to aiming straight at it if there's no solution.
+func _lead_direction(to_target: Vector3) -> Vector3:
+	var dist := to_target.length()
+	if dist < 0.001:
+		return -global_transform.basis.z
+	var bs: float = maxf(1.0, enemy_def.projectile_speed)
+	var vt: Vector3 = target.get_velocity() if target.has_method("get_velocity") else Vector3.ZERO
+	var vrel := vt - velocity
+	var t := _intercept_time(to_target, vrel, bs)
+	if t <= 0.0:
+		return to_target / dist
+	var lead := (to_target + vrel * t) / (bs * t)
+	return lead.normalized() if lead.length() > 0.001 else to_target / dist
+
+func _intercept_time(p: Vector3, vrel: Vector3, bs: float) -> float:
+	var a := bs * bs - vrel.length_squared()
+	var pv := p.dot(vrel)
+	if absf(a) < 0.0001:
+		return -p.length_squared() / (2.0 * pv) if absf(pv) > 0.0001 else 0.0
+	var disc := pv * pv + a * p.length_squared()
+	if disc < 0.0:
+		return 0.0
+	var root := sqrt(disc)
+	var best := -1.0
+	for tt in [(pv + root) / a, (pv - root) / a]:
+		if tt > 0.0 and (best < 0.0 or tt < best):
+			best = tt
+	return best
+
+# get_velocity() is inherited from CharacterBody3D (returns `velocity`), so the
+# weapon's bolt-inheritance and the player's lead pip read it without an override.
 
 func apply_damage(amount: float) -> void:
 	_hull = maxf(0.0, _hull - amount)

@@ -24,7 +24,7 @@ func _physics_process(delta: float) -> void:
 	heat = maxf(0.0, heat - weapon_def.cooldown_rate * delta)
 	# Player weapons fire from local input only on the owning peer (M5); drones use
 	# auto_fire (driven by their host-run AI). Single-player has default authority.
-	if not auto_fire and is_multiplayer_authority() and Input.is_action_pressed(fire_action):
+	if not auto_fire and is_multiplayer_authority() and not Settings.input_locked and Input.is_action_pressed(fire_action):
 		try_fire()
 
 ## Returns true if a bolt was actually fired (not on cooldown / overheated).
@@ -36,9 +36,17 @@ func try_fire() -> bool:
 	var muzzle := global_transform * muzzle_offset
 	var bolt := Projectile.new()
 	bolt.setup(weapon_def.damage, weapon_def.projectile_speed, target_mask, bolt_color)
+	bolt.inherited_velocity = _shooter_velocity()   # Newtonian: the bolt carries the ship's drift
 	var scene := get_tree().current_scene
 	scene.add_child(bolt)
 	bolt.global_transform = Transform3D(global_transform.basis, muzzle)
 	_cooldown = 1.0 / maxf(0.01, weapon_def.fire_rate)
 	heat += weapon_def.heat_per_shot
 	return true
+
+## The mount's owner (ship or drone) supplies its velocity so bolts inherit it.
+func _shooter_velocity() -> Vector3:
+	var owner_node := get_parent()
+	if owner_node != null and owner_node.has_method("get_velocity"):
+		return owner_node.get_velocity()
+	return Vector3.ZERO

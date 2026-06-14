@@ -15,11 +15,20 @@ extends Resource
 @export var utility_slots: int = 1
 @export var repair_kits: int = 3
 
-# Flight feel (arcade tuning — not in the GDD JSON, needed for game feel)
-@export var acceleration: float = 30.0
-@export var strafe_accel: float = 22.0
-@export var linear_damp: float = 0.8
-@export var brake_damp: float = 3.0
-@export var turn_speed: float = 2.5
-@export var roll_speed: float = 2.8
+# Flight feel — full Newtonian rigid-body model (see ShipController). Thrust and
+# steering are accelerations applied to conserved momentum; space has no drag, so
+# the ship coasts. Speed bleeds off only via the brake or flight assist.
+@export var mass: float = 8.0                   # rigid-body mass (drives collision momentum)
+@export var acceleration: float = 32.0          # forward main-engine thrust (m/s²)
+@export var reverse_accel: float = 16.0         # reverse thrust — weaker than forward (realistic)
+@export var strafe_accel: float = 20.0          # RCS lateral + vertical thrust (m/s²)
 @export var boost_accel_mult: float = 1.8
+@export var assist_response: float = 3.0        # how hard flight assist pulls uncommanded drift to rest (1/s)
+@export var assist_decel: float = 34.0          # RCS decel budget the assist may spend (m/s²)
+@export var brake_decel: float = 60.0           # active brake (Ctrl): a firm all-axis stop (m/s²)
+@export var flight_assist_default: bool = true  # start assisted (coupled); off = raw Newtonian drift
+@export var turn_rate: float = 2.4              # max pitch/yaw rate (rad/s)
+@export var roll_rate: float = 2.8              # max roll rate (rad/s)
+@export var turn_accel: float = 7.0             # angular accel toward the commanded rate (rad/s²)
+@export var rot_assist: float = 5.0             # angular decel the assist spends to kill unwanted spin (rad/s²)
+@export var mouse_sens: float = 0.05            # mouse pixels → commanded turn rate

@@ -8,6 +8,9 @@ extends Area3D
 var damage: float = 10.0
 var speed: float = 160.0
 var lifetime: float = 4.0
+# Newtonian gunnery: a bolt inherits the shooter's velocity, so its true path is
+# the muzzle vector PLUS the ship's drift. Set by WeaponController at fire time.
+var inherited_velocity: Vector3 = Vector3.ZERO
 var _color: Color = Color(0.4, 0.9, 1.0)
 var _life: float = 0.0
 
@@ -43,7 +46,8 @@ func _ready() -> void:
 	body_entered.connect(_on_body_entered)
 
 func _physics_process(delta: float) -> void:
-	global_position += -global_transform.basis.z * speed * delta
+	# Muzzle velocity along the bolt's own −Z, plus the shooter's inherited drift.
+	global_position += (-global_transform.basis.z * speed + inherited_velocity) * delta
 	_life += delta
 	if _life >= lifetime:
 		queue_free()
