@@ -11,7 +11,10 @@ var _speed_label: Label
 var _boost_label: Label
 var _heat_label: Label
 var _enemies_label: Label
+var _cargo_label: Label
+var _threat_label: Label
 var _objective_label: Label
+var _heat: float = 0.0          # escalating-threat level, 0..1 (from HeatDirector)
 var _timer_label: Label
 var _dock_label: Label
 var _status_label: Label
@@ -31,6 +34,8 @@ func _ready() -> void:
 	_boost_label = _make_label(panel)
 	_heat_label = _make_label(panel)
 	_enemies_label = _make_label(panel)
+	_cargo_label = _make_label(panel)
+	_threat_label = _make_label(panel)
 
 	# Mission objective banner (top-center).
 	_objective_label = Label.new()
@@ -66,6 +71,7 @@ func _ready() -> void:
 	EventBus.docking_available.connect(func(b: bool) -> void: _dock_label.visible = b)
 	EventBus.extraction_timer_changed.connect(_on_extraction_timer)
 	EventBus.mission_state_changed.connect(_on_mission_state)
+	EventBus.heat_changed.connect(func(level: float) -> void: _heat = level)
 
 	var hint := Label.new()
 	hint.text = "W/S thrust   mouse steer   A/D roll   Q/E strafe   LMB fire   Shift boost   Ctrl brake   Esc free mouse   F11 fullscreen   F8 quit"
@@ -110,3 +116,7 @@ func _process(_delta: float) -> void:
 	if ship.weapon != null and ship.weapon.weapon_def != null:
 		_heat_label.text = "HEAT    %d%%" % int(100.0 * ship.weapon.heat / ship.weapon.weapon_def.max_heat)
 	_enemies_label.text = "DRONES  %d" % get_tree().get_nodes_in_group("enemies").size()
+	if ship.cargo != null:
+		_cargo_label.text = "CARGO   %d/%d  •  %d cr" % [ship.cargo.slots_used(), ship.cargo.max_slots, ship.cargo.salvage_value]
+	_threat_label.text = "THREAT  %d%%" % int(_heat * 100.0)
+	_threat_label.modulate = Color(1, 1, 1).lerp(Color(1.0, 0.3, 0.25), _heat)

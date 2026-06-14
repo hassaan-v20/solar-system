@@ -5,7 +5,40 @@ extends Node3D
 ## milestones. Goal of M1 (GDD §27): "flying around feels acceptable."
 
 const ASTEROID_COUNT := 140
-const STAR_COUNT := 700
+
+# Imported ship model (replaces the placeholder boxes). The GLB is Y-up with its
+# length along Z and nose toward -Z (Godot's forward), so it should need no
+# rotation. Tweak SCALE for size; set EULER to Vector3(0, 180, 0) if it ever
+# imports facing backward. BOUNDS is the model's local size (from the GLB) and
+# drives the hitbox so collision tracks what you see.
+const SHIP_MODEL_PATH := "res://assets/models/ship/spaceship_ezno.glb"
+const SHIP_MODEL_SCALE := 0.22
+# Nose is +Z (confirmed: the Thruster meshes sit at the -Z end), so a 180° yaw
+# turns it to face Godot's forward (-Z).
+const SHIP_MODEL_EULER := Vector3(0, 180, 0)
+const SHIP_MODEL_BOUNDS := Vector3(24.366, 5.592, 17.345)   # world size from the GLB
+const SHIP_MODEL_CENTER := Vector3(0.0, -1.346, -2.524)     # bbox-center offset to cancel
+
+# Imported station model (replaces the placeholder spine + boxes). ~18.8u in the
+# GLB; scaled up to roughly fill the dock zone (radius 26). Recentered like the ship.
+const STATION_MODEL_PATH := "res://assets/models/station/spacestation_7.glb"
+const STATION_MODEL_SCALE := 25.0   # a massive derelict (~470u); pushed back to 500u so it clears spawn
+const STATION_MODEL_EULER := Vector3(0, 0, 0)
+const STATION_MODEL_CENTER := Vector3(0.319, -1.672, 1.753)
+
+# Asteroid rocks (3 low-poly meshes in the GLB) instanced across the field.
+const ASTEROID_MODEL_PATH := "res://assets/models/asteroids/asteroids_andromeda.glb"
+
+# Salvage crates — the loot you grab in the risk-greed loop.
+const SALVAGE_MODEL_PATH := "res://assets/models/salvage/scifi_crates.glb"
+const SALVAGE_MODEL_SCALE := 7.0
+const SALVAGE_MODEL_CENTER := Vector3(0.0, 0.03, -0.013)
+const SALVAGE_COUNT := 14
+
+# Data Core objective, placed glowing at the station's heart (the thing you hack out).
+const DATACORE_MODEL_PATH := "res://assets/models/objective/data_core_rack.glb"
+const DATACORE_MODEL_SCALE := 9.0
+const DATACORE_MODEL_CENTER := Vector3(0.0, 1.157, 0.0)
 
 # Physics collision layers (1-based bit values). Friend/foe for weapons is decided
 # entirely by these masks, so projectiles need no owner tracking (see projectile.gd).
@@ -42,7 +75,6 @@ func _ready() -> void:
 	_seed_rng()
 	# Shared, deterministic sector (built identically on every peer from the seed).
 	_build_environment()
-	_build_stars()
 	_build_asteroids()
 	if Net.active:
 		_setup_coop()
@@ -59,6 +91,11 @@ func _build_solo() -> void:
 		_mission_def = MissionDef.new()
 	var dock := _build_station(_mission_def.station_distance)
 	_build_mission(_ship, dock, _mission_def)
+	_build_salvage(_ship)
+	# Escalating threat: drones hunt harder the longer you linger / the more you grab.
+	var heat := HeatDirector.new()
+	heat.ship = _ship
+	add_child(heat)
 	EventBus.ship_destroyed.connect(_on_ship_destroyed)
 	EventBus.enemy_destroyed.connect(func() -> void: _drones_killed += 1)
 	EventBus.mission_state_changed.connect(_on_mission_state_changed)
@@ -244,42 +281,42 @@ func _setup_gamepad() -> void:
 func _build_environment() -> void:
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-35, 40, 0)
-	sun.light_energy = 1.1
+	sun.light_energy = 1.15
+	sun.light_color = Color(1.0, 0.97, 0.92)   # faint warm key so the cool ambient has contrast
 	add_child(sun)
 
 	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.015, 0.02, 0.04)
+	# Real Milky Way panorama (8K equirectangular) rendered at infinity. It reads as
+	# deep space with genuine depth, without the parallaxing near-field star dots
+	# that felt claustrophobic.
+	env.background_mode = Environment.BG_SKY
+	var sky := Sky.new()
+	var sky_mat := PanoramaSkyMaterial.new()
+	sky_mat.panorama = load("res://assets/textures/8k_stars_milky_way.jpg")
+	sky.sky_material = sky_mat
+	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.12, 0.14, 0.20)
 	env.ambient_light_energy = 0.6
-	env.glow_enabled = true
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
+
+	# Soft, wide bloom so engines/bolts/explosions read as glowing light sources.
+	env.glow_enabled = true
+	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SCREEN
+	env.glow_intensity = 0.9
+	env.glow_strength = 1.1
+	env.glow_bloom = 0.12
+	env.glow_hdr_threshold = 0.85
+	# Spread bloom across several blur levels for a soft falloff rather than a halo.
+	env.set_glow_level(1, 0.8)
+	env.set_glow_level(2, 1.0)
+	env.set_glow_level(3, 1.0)
+	env.set_glow_level(4, 0.6)
+	env.set_glow_level(5, 0.4)
+
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
-
-func _build_stars() -> void:
-	var mesh := SphereMesh.new()
-	mesh.radius = 0.6
-	mesh.height = 1.2
-	mesh.radial_segments = 4
-	mesh.rings = 2
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.mesh = mesh
-	mm.instance_count = STAR_COUNT
-	for i in STAR_COUNT:
-		var pos := _random_unit() * _rng.randf_range(400.0, 600.0)
-		var s := _rng.randf_range(0.5, 2.2)
-		mm.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ONE * s), pos))
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.albedo_color = Color(1, 1, 1)
-	var mmi := MultiMeshInstance3D.new()
-	mmi.multimesh = mm
-	mmi.material_override = mat
-	add_child(mmi)
 
 func _build_ship() -> ShipController:
 	var ship := ShipController.new()
@@ -299,36 +336,20 @@ func _build_ship() -> ShipController:
 ## Builds a ship's visuals, collision, weapon, and cargo onto `ship` (whose
 ## ship_def must already be set). Shared by solo and co-op spawning.
 func _assemble_ship(ship: ShipController, hull_color: Color) -> void:
-	# Hull body (placeholder primitive)
-	var body := MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = Vector3(2.2, 0.7, 3.4)
-	body.mesh = box
-	var hull_mat := StandardMaterial3D.new()
-	hull_mat.albedo_color = hull_color
-	hull_mat.metallic = 0.6
-	hull_mat.roughness = 0.4
-	body.material_override = hull_mat
-	ship.add_child(body)
-
-	# Glowing nose marker so the ship's facing is readable while flying.
-	var nose := MeshInstance3D.new()
-	var nbox := BoxMesh.new()
-	nbox.size = Vector3(0.5, 0.5, 1.0)
-	nose.mesh = nbox
-	nose.position = Vector3(0, 0, -2.0)
-	var nose_mat := StandardMaterial3D.new()
-	nose_mat.albedo_color = Color(1.0, 0.55, 0.2)
-	nose_mat.emission_enabled = true
-	nose_mat.emission = Color(1.0, 0.4, 0.1)
-	nose.material_override = nose_mat
-	ship.add_child(nose)
+	# Visual hull: the imported GLB model. If it hasn't imported yet the ship still
+	# flies — collision and weapon are independent of the visual.
+	var model := _spawn_model(SHIP_MODEL_PATH, SHIP_MODEL_SCALE, SHIP_MODEL_EULER, SHIP_MODEL_CENTER)
+	if model != null:
+		ship.add_child(model)
 
 	# Body: player_ship layer, collides with the environment (asteroids); bolts
 	# detect it via this layer.
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
-	shape.size = Vector3(2.2, 0.7, 3.4)
+	# Hitbox tracks the scaled model bounds, rotated to match the model's facing,
+	# tucked in slightly for forgiving flight.
+	var ext := (Basis.from_euler(SHIP_MODEL_EULER * (PI / 180.0)) * SHIP_MODEL_BOUNDS).abs()
+	shape.size = ext * SHIP_MODEL_SCALE * 0.9
 	col.shape = shape
 	ship.add_child(col)
 	ship.collision_layer = LAYER_PLAYER_SHIP
@@ -343,10 +364,24 @@ func _assemble_ship(ship: ShipController, hull_color: Color) -> void:
 	ship.add_child(wc)
 	ship.weapon = wc
 
-	# Cargo hold (carries the Data Core / salvage this run).
+	# Cargo hold (carries the Data Core / salvage this run); slots bound greed.
 	var cargo := CargoSystem.new()
+	cargo.max_slots = ship.ship_def.cargo_slots
 	ship.add_child(cargo)
 	ship.cargo = cargo
+
+	# Engine glow + thruster plume + speed dust (presentation only; reads ship
+	# motion, so it works on remote puppet ships too). Engines tint per player slot.
+	var fx := ShipFX.new()
+	fx.engine_color = hull_color.lerp(Color(1.0, 0.5, 0.2), 0.6)   # warm afterburner, slight slot tint
+	ship.add_child(fx)
+
+## Instantiates an imported GLB under a pivot that scales + rotates it, with a
+## recenter child that cancels the model's origin offset (so its bounding-box
+## centre sits at the returned node's origin). Returns null if the model hasn't
+## been imported yet — callers keep working with no visual.
+func _spawn_model(path: String, model_scale: float, euler: Vector3, center: Vector3) -> Node3D:
+	return ModelUtil.spawn(path, model_scale, euler, center)
 
 func _build_camera(ship: ShipController) -> void:
 	var cam := ChaseCamera.new()
@@ -360,47 +395,75 @@ func _build_hud(ship: ShipController) -> void:
 	add_child(hud)
 
 func _build_asteroids() -> void:
+	var meshes := _load_asteroid_meshes()   # the 3 rock meshes from the GLB
 	for i in ASTEROID_COUNT:
-		var r := _rng.randf_range(1.5, 6.0)
-
-		# Solid rock: a StaticBody3D on the default collision layer. The ship is a
-		# CharacterBody3D (also default mask), so move_and_slide stops it on impact
-		# — no more flying straight through asteroids. (M2 will split these onto a
-		# dedicated "environment" layer once weapons/enemies need their own.)
+		# Solid rock: a StaticBody3D on the environment layer so the ship stops on it.
 		var body := StaticBody3D.new()
 		body.collision_layer = LAYER_ENVIRONMENT
 		# Place in a shell around origin so the spawn point stays clear.
 		body.position = _random_unit() * _rng.randf_range(40.0, 260.0)
 		body.rotation = Vector3(_rng.randf() * TAU, _rng.randf() * TAU, _rng.randf() * TAU)
 
-		var mesh_inst := MeshInstance3D.new()
-		var m := SphereMesh.new()
-		m.radius = r
-		m.height = r * 2.0
-		m.radial_segments = 6
-		m.rings = 4
-		mesh_inst.mesh = m
-		var mat := StandardMaterial3D.new()
-		var g := _rng.randf_range(0.25, 0.45)
-		mat.albedo_color = Color(g, g * 0.95, g * 0.9)
-		mat.roughness = 1.0
-		mesh_inst.material_override = mat
-		# Per-axis scale only lumps up the *look*; the collision sphere below stays
-		# round (a fair approximation for placeholder rocks, and keeps the physics
-		# shape free of the non-uniform-scale warnings Godot raises otherwise).
-		var sx := _rng.randf_range(0.7, 1.4)
-		var sy := _rng.randf_range(0.7, 1.4)
-		var sz := _rng.randf_range(0.7, 1.4)
-		mesh_inst.scale = Vector3(sx, sy, sz)
-		body.add_child(mesh_inst)
-
-		var col := CollisionShape3D.new()
-		var shape := SphereShape3D.new()
-		shape.radius = r * (sx + sy + sz) / 3.0
-		col.shape = shape
-		body.add_child(col)
-
+		var target_r := _rng.randf_range(2.0, 7.0)   # gameplay radius, independent of model size
+		if meshes.is_empty():
+			_add_placeholder_rock(body, target_r)     # model not imported yet → procedural sphere
+		else:
+			# Pick a rock mesh and uniform-scale it to the target radius, so the three
+			# differently-sized source rocks read as a consistent field.
+			var mesh: Mesh = meshes[_rng.randi() % meshes.size()]
+			var aabb := mesh.get_aabb()
+			var s := target_r / maxf(0.01, aabb.size.length() * 0.5)
+			var mi := MeshInstance3D.new()
+			mi.mesh = mesh
+			mi.scale = Vector3.ONE * s
+			mi.position = -aabb.get_center() * s       # centre the rock on the body origin
+			body.add_child(mi)
+			var col := CollisionShape3D.new()
+			var shape := SphereShape3D.new()
+			shape.radius = target_r * 0.6              # snug sphere inside the lumpy rock
+			col.shape = shape
+			body.add_child(col)
 		add_child(body)
+
+## Pulls the distinct rock meshes out of the asteroid GLB once, to instance across
+## the field. Returns [] if the model hasn't been imported (caller falls back).
+func _load_asteroid_meshes() -> Array:
+	var out: Array = []
+	var scene := load(ASTEROID_MODEL_PATH)
+	if not (scene is PackedScene):
+		push_warning("asteroid model not imported yet: %s" % ASTEROID_MODEL_PATH)
+		return out
+	var inst := (scene as PackedScene).instantiate()
+	_collect_meshes(inst, out)
+	inst.queue_free()   # we keep the Mesh resources; the node tree is disposable
+	return out
+
+func _collect_meshes(node: Node, out: Array) -> void:
+	if node is MeshInstance3D and (node as MeshInstance3D).mesh != null:
+		out.append((node as MeshInstance3D).mesh)
+	for c in node.get_children():
+		_collect_meshes(c, out)
+
+## Fallback rock when the asteroid model isn't available, so the field is never empty.
+func _add_placeholder_rock(body: StaticBody3D, r: float) -> void:
+	var mi := MeshInstance3D.new()
+	var m := SphereMesh.new()
+	m.radius = r
+	m.height = r * 2.0
+	m.radial_segments = 6
+	m.rings = 4
+	mi.mesh = m
+	var mat := StandardMaterial3D.new()
+	var g := _rng.randf_range(0.25, 0.45)
+	mat.albedo_color = Color(g, g * 0.95, g * 0.9)
+	mat.roughness = 1.0
+	mi.material_override = mat
+	body.add_child(mi)
+	var col := CollisionShape3D.new()
+	var shape := SphereShape3D.new()
+	shape.radius = r * 0.9
+	col.shape = shape
+	body.add_child(col)
 
 ## Builds the derelict station (placeholder primitives) and returns its docking
 ## zone so the MissionManager can wire the dock objective to it.
@@ -409,40 +472,35 @@ func _build_station(distance: float) -> ShipZone:
 	station.position = Vector3(0, 0, -distance)   # straight ahead of the spawn point
 	add_child(station)
 
-	var hull_mat := StandardMaterial3D.new()
-	hull_mat.albedo_color = Color(0.18, 0.2, 0.24)
-	hull_mat.metallic = 0.7
-	hull_mat.roughness = 0.6
+	# Visual hull: the imported GLB station (recentered + scaled). The dock zone
+	# below still works even if the model hasn't imported yet.
+	var model := _spawn_model(STATION_MODEL_PATH, STATION_MODEL_SCALE, STATION_MODEL_EULER, STATION_MODEL_CENTER)
+	if model != null:
+		station.add_child(model)
 
-	# Central spine.
-	var core := MeshInstance3D.new()
-	var core_mesh := CylinderMesh.new()
-	core_mesh.top_radius = 6.0
-	core_mesh.bottom_radius = 6.0
-	core_mesh.height = 46.0
-	core.mesh = core_mesh
-	core.material_override = hull_mat
-	station.add_child(core)
+	# The Data Core itself — a glowing server rack at the station's heart, so the
+	# objective you hack out is something you can see and fly toward.
+	var core := _spawn_model(DATACORE_MODEL_PATH, DATACORE_MODEL_SCALE, Vector3.ZERO, DATACORE_MODEL_CENTER)
+	if core != null:
+		station.add_child(core)
+	var core_light := OmniLight3D.new()
+	core_light.light_color = Color(0.4, 0.9, 1.0)
+	core_light.light_energy = 4.0
+	core_light.omni_range = 70.0
+	station.add_child(core_light)
 
-	# A few protruding modules so the silhouette reads as a structure, not a pole.
-	for spec in [Vector3(14, 6, 0), Vector3(-12, -8, 4), Vector3(0, 14, -10)]:
-		var mod := MeshInstance3D.new()
-		var box := BoxMesh.new()
-		box.size = Vector3(10, 6, 8)
-		mod.mesh = box
-		mod.material_override = hull_mat
-		mod.position = spec
-		station.add_child(mod)
-
-	# Dim red running lights so the derelict is findable in the dark sector.
+	# Red running light so the huge derelict is findable and lit in the dark sector.
 	var beacon := OmniLight3D.new()
 	beacon.light_color = Color(1.0, 0.3, 0.25)
-	beacon.light_energy = 3.0
-	beacon.omni_range = 60.0
+	beacon.light_energy = 5.0
+	beacon.omni_range = 300.0
 	station.add_child(beacon)
 
+	# Big trigger (you dock once inside the station's reach) but a small marker orb
+	# so it doesn't render as a giant translucent dome over the structure.
 	var dock := ShipZone.new()
-	dock.radius = 26.0
+	dock.radius = 130.0
+	dock.marker_radius = 22.0
 	dock.marker_color = Color(0.3, 0.7, 1.0)
 	station.add_child(dock)
 	return dock
@@ -452,6 +510,28 @@ func _build_mission(ship: ShipController, dock: ShipZone, mdef: MissionDef) -> v
 	mm.mission_def = mdef
 	mm.setup(ship, ship.cargo, dock)
 	add_child(mm)
+
+## Scatters salvage crates through the sector — the greed half of the loop. Three
+## value tiers (rarer = worth more), each a colour-coded beacon you fly into.
+func _build_salvage(_ship: ShipController) -> void:
+	var tiers := [
+		{"id": "scrap", "value": 40, "color": Color(0.5, 1.0, 0.7)},
+		{"id": "alloy", "value": 95, "color": Color(0.4, 0.7, 1.0)},
+		{"id": "relic", "value": 190, "color": Color(1.0, 0.8, 0.3)},
+	]
+	for i in SALVAGE_COUNT:
+		var roll := _rng.randf()
+		var tier: Dictionary = tiers[0] if roll < 0.55 else (tiers[1] if roll < 0.85 else tiers[2])
+		var pickup := SalvagePickup.new()
+		pickup.value = int(tier["value"])
+		pickup.salvage_id = String(tier["id"])
+		pickup.tier_color = tier["color"]
+		var model := _spawn_model(SALVAGE_MODEL_PATH, SALVAGE_MODEL_SCALE,
+			Vector3(0.0, _rng.randf() * 360.0, 0.0), SALVAGE_MODEL_CENTER)
+		if model != null:
+			pickup.add_child(model)
+		pickup.position = _random_unit() * _rng.randf_range(60.0, 280.0)
+		add_child(pickup)
 
 ## End-of-run bookkeeping: compute the payout, persist progression, stash a
 ## summary for the results screen, then hand off after a short beat.
@@ -463,7 +543,8 @@ func _on_mission_state_changed(state: String) -> void:
 	_run_finished = true
 	var success := state == "success"
 	var has_core: bool = _ship.cargo != null and _ship.cargo.has_item(MissionManager.DATA_CORE)
-	var reward := RewardCalculator.compute(success, _drones_killed, has_core, _mission_def.reward_credits)
+	var salvage_value: int = _ship.cargo.salvage_value if _ship.cargo != null else 0
+	var reward := RewardCalculator.compute(success, _drones_killed, has_core, _mission_def.reward_credits, salvage_value)
 
 	PlayerProfile.credits += reward
 	if success:
@@ -472,11 +553,16 @@ func _on_mission_state_changed(state: String) -> void:
 			PlayerProfile.total_cargo_extracted += _ship.cargo.items.size()
 	PlayerProfile.ship_hull_pct = clampf(_ship.current_hull / _ship.ship_def.hull_max, 0.0, 1.0)
 	PlayerProfile.save_profile()
+	var salvage_count: int = 0
+	if _ship.cargo != null:
+		salvage_count = _ship.cargo.slots_used() - (1 if has_core else 0)
 	PlayerProfile.last_run = {
 		"success": success,
 		"credits_earned": reward,
 		"drones_killed": _drones_killed,
 		"data_core": has_core,
+		"salvage_value": salvage_value if success else 0,
+		"salvage_count": salvage_count if success else 0,
 	}
 
 	get_tree().create_timer(RESULTS_DELAY).timeout.connect(

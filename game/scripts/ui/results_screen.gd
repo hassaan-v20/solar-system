@@ -49,6 +49,7 @@ func _build_ui() -> void:
 	var lines := [
 		"Drones destroyed:  %d" % int(r.get("drones_killed", 0)),
 		"Data Core:  %s" % ("recovered" if r.get("data_core", false) else "lost"),
+		"Salvage:  %d crates  (%d cr)" % [int(r.get("salvage_count", 0)), int(r.get("salvage_value", 0))],
 		"Credits earned:  %d" % int(r.get("credits_earned", 0)),
 		"Balance:  %d cr" % PlayerProfile.credits,
 	]

@@ -5,6 +5,11 @@ extends CharacterBody3D
 ## the camera/HUD or player input, only its target's transform. Tuning from
 ## EnemyDef (GDD §30.3).
 
+const MODEL_PATH := "res://assets/models/enemies/scifi_drone.glb"
+const MODEL_SCALE := 1.1
+const MODEL_EULER := Vector3(0, 0, 0)   # flip Y to 180 if the guns point backward
+const MODEL_CENTER := Vector3(-0.025, 0.07, 0.0)
+
 @export var enemy_def: EnemyDef
 var target: Node3D
 
@@ -25,20 +30,26 @@ func _ready() -> void:
 	_build_weapon()
 
 func _build_body() -> void:
-	var mesh_inst := MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = Vector3(2.0, 1.0, 2.2)
-	mesh_inst.mesh = box
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.45, 0.10, 0.12)
-	mat.metallic = 0.4
-	mat.roughness = 0.5
-	mat.emission_enabled = true
-	mat.emission = Color(0.85, 0.18, 0.12)
-	mat.emission_energy_multiplier = 0.7
-	mesh_inst.material_override = mat
-	add_child(mesh_inst)
+	# Visual: the imported drone model; falls back to a red box if not imported yet.
+	var model := ModelUtil.spawn(MODEL_PATH, MODEL_SCALE, MODEL_EULER, MODEL_CENTER)
+	if model != null:
+		add_child(model)
+	else:
+		var mesh_inst := MeshInstance3D.new()
+		var box := BoxMesh.new()
+		box.size = Vector3(2.0, 1.0, 2.2)
+		mesh_inst.mesh = box
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(0.45, 0.10, 0.12)
+		mat.metallic = 0.4
+		mat.roughness = 0.5
+		mat.emission_enabled = true
+		mat.emission = Color(0.85, 0.18, 0.12)
+		mat.emission_energy_multiplier = 0.7
+		mesh_inst.material_override = mat
+		add_child(mesh_inst)
 
+	# Hitbox stays a simple box regardless of the visual.
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
 	shape.size = Vector3(2.0, 1.0, 2.2)

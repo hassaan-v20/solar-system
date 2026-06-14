@@ -9,6 +9,7 @@ signal ship_entered
 signal ship_exited
 
 @export var radius: float = 20.0
+@export var marker_radius: float = 0.0   # 0 = match the trigger radius; set smaller for a big trigger
 @export var marker_color: Color = Color(0.3, 0.7, 1.0)
 
 func _ready() -> void:
@@ -24,8 +25,9 @@ func _ready() -> void:
 
 	var mesh_inst := MeshInstance3D.new()
 	var sphere := SphereMesh.new()
-	sphere.radius = radius
-	sphere.height = radius * 2.0
+	var mr := marker_radius if marker_radius > 0.0 else radius
+	sphere.radius = mr
+	sphere.height = mr * 2.0
 	mesh_inst.mesh = sphere
 	var mat := StandardMaterial3D.new()
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA

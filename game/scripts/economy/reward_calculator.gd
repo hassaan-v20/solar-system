@@ -13,14 +13,15 @@ const REPAIR_MEDIUM := 300
 const REPAIR_HEAVY := 600
 const REPAIR_DESTROYED := 1000
 
-static func compute(success: bool, drones_killed: int, has_data_core: bool, base_reward: int) -> int:
+static func compute(success: bool, drones_killed: int, has_data_core: bool, base_reward: int, salvage_value: int = 0) -> int:
 	var credits := PER_DRONE * maxi(0, drones_killed)
 	if success:
 		credits += base_reward
 		if has_data_core:
 			credits += DATA_CORE_VALUE
+		credits += maxi(0, salvage_value)   # salvage only banks if you survive to extract
 	else:
-		credits += FAIL_CONSOLATION
+		credits += FAIL_CONSOLATION         # die with a full hold → it's all lost
 	return credits
 
 ## Credits to repair to full, by remaining hull fraction (0..1).

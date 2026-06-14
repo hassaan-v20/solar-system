@@ -18,5 +18,9 @@ signal extraction_timer_changed(seconds_left: float)
 signal docking_available(available: bool)
 signal cargo_changed(items: Array)
 
+# Salvage / risk-greed loop
+signal salvage_collected(value: int)   # a crate was grabbed into the hold
+signal heat_changed(level: float)      # escalating-threat meter, 0..1
+
 # Economy / progression (Milestone 4)
 signal profile_changed

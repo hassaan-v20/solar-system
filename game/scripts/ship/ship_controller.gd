@@ -10,6 +10,7 @@ extends CharacterBody3D
 var current_hull: float = 0.0
 var current_shield: float = 0.0
 var is_boosting: bool = false
+var throttle: float = 0.0   # forward thrust 0..1 this frame; read by ShipFX for engine flare
 var alive: bool = true
 var weapon: WeaponController   # set by main when the ship is assembled
 var cargo: CargoSystem         # set by main when the ship is assembled
@@ -70,6 +71,7 @@ func _translate(delta: float) -> void:
 	var braking := Input.is_action_pressed("brake")
 	var thrust := Input.get_axis("thrust_back", "thrust_forward")
 	var strafe := Input.get_axis("strafe_left", "strafe_right")
+	throttle = clampf(thrust, 0.0, 1.0)   # only forward thrust flares the engines
 
 	var accel := ship_def.acceleration * (ship_def.boost_accel_mult if is_boosting else 1.0)
 	var forward := -global_transform.basis.z

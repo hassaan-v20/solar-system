@@ -6,7 +6,7 @@
 script = ExtResource("1")
 mission_id = "ghost_station"
 display_name = "Ghost Station"
-station_distance = 240.0
+station_distance = 500.0
 extraction_distance = 260.0
 hack_duration = 25.0
 extract_duration = 75.0

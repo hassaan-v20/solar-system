@@ -29,19 +29,61 @@ cache_paths_missing() {
   done | grep -q stale
 }
 
+# Brand-new class: a source file declares a `class_name` the cache doesn't list
+# yet (added since the cache was last built). The boot check below misses this
+# when the new class lives off the main scene's load path — e.g. a raid-only
+# class — so it boots clean while a later scene change fails with a blank screen.
+# Check source declarations against the cache directly.
+class_names_missing() {
+  [ -f "$CACHE" ] || return 0
+  local cn
+  while IFS= read -r cn; do
+    [ -n "$cn" ] || continue
+    grep -q "\"class\": &\"$cn\"" "$CACHE" || return 0
+  done < <(grep -rhoE '^class_name[[:space:]]+[A-Za-z_][A-Za-z0-9_]*' scripts 2>/dev/null | awk '{print $2}')
+  return 1
+}
+
+# A source asset (texture/audio) with no `.import` sibling hasn't been imported
+# yet — e.g. an image just dropped into the project. The windowed runtime can
+# only load() already-imported assets, so a fresh texture would fail to load
+# until the editor imports it; force a reimport first.
+assets_unimported() {
+  local f
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    [ -f "$f.import" ] || return 0
+  done < <(find . -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' \
+    -o -iname '*.webp' -o -iname '*.exr' -o -iname '*.hdr' -o -iname '*.ogg' \
+    -o -iname '*.wav' -o -iname '*.glb' -o -iname '*.gltf' \) \
+    -not -path './.godot/*' -not -path './addons/*' 2>/dev/null)
+  return 1
+}
+
 # Safety net: a headless boot that emits class/parse errors. Catches cases the
-# path check can't, e.g. a renamed class_name where the file path is unchanged.
+# checks above can't, e.g. a renamed class_name where the file path is unchanged.
 boot_emits_class_errors() {
   "$GODOT" --headless --quit-after 5 2>&1 \
     | grep -qE 'hides a global script class|Could not find script for class|Could not parse global class|Failed to load script'
 }
 
-if cache_paths_missing || boot_emits_class_errors; then
+if cache_paths_missing || class_names_missing || assets_unimported || boot_emits_class_errors; then
   echo "» Stale .godot class cache detected — clearing and re-importing…"
   rm -rf .godot
   "$GODOT" --headless --editor --quit >/dev/null 2>&1 || true
   echo "» Cache rebuilt."
 fi
 
-echo "» Launching Stellar…"
-exec "$GODOT" --path "$GAME" "$@"
+# Headless/CI runs stay in the foreground so you get the output and exit code.
+# A normal (windowed) launch is DETACHED so it never blocks the calling shell:
+# a GUI game runs until you quit it, and a foreground `exec` would hang the
+# terminal — or the Claude Code turn that started it — until then.
+if [[ " $* " == *" --headless "* ]]; then
+  echo "» Launching Stellar (headless)…"
+  exec "$GODOT" --path "$GAME" "$@"
+fi
+
+LOG="${TMPDIR:-/tmp}/stellar-run.log"
+echo "» Launching Stellar… (log: $LOG)"
+nohup "$GODOT" --path "$GAME" "$@" >"$LOG" 2>&1 &
+echo "» Launched (pid $!) — the game runs independently; this shell is free."
