@@ -129,6 +129,11 @@ func _ready() -> void:
 	bars.local_ship = ship
 	root.add_child(bars)
 
+	# Bottom-left shield / hull / boost bars for the local pilot.
+	var local_bars := LocalHealthBar.new()
+	local_bars.ship = ship
+	root.add_child(local_bars)
+
 func _make_label(parent: Node) -> Label:
 	var l := Label.new()
 	parent.add_child(l)
@@ -276,7 +281,15 @@ func _process(_delta: float) -> void:
 	_hull_label.text = "HULL    %d / %d" % [int(ship.current_hull), int(ship.ship_def.hull_max)]
 	_shield_label.text = "SHIELD  %d / %d" % [int(ship.current_shield), int(ship.ship_def.shield_max)]
 	_speed_label.text = "SPEED   %d m/s" % roundi(ship.get_speed())
-	_boost_label.text = "BOOST   %s" % ("ENGAGED" if ship.is_boosting else "ready")
+	if ship.boost_locked:
+		_boost_label.text = "BOOST   RECHARGING"
+		_boost_label.modulate = Color(1.0, 0.5, 0.2)
+	elif ship.is_boosting:
+		_boost_label.text = "BOOST   ENGAGED"
+		_boost_label.modulate = Color(0.5, 0.9, 1.0)
+	else:
+		_boost_label.text = "BOOST   %d%%" % int(100.0 * ship.boost_energy / maxf(0.01, ship.ship_def.boost_capacity))
+		_boost_label.modulate = Color(1, 1, 1)
 	# Flag Newtonian (assist-off) flight in amber so the changed handling is obvious.
 	if ship.flight_assist:
 		_assist_label.text = "ASSIST  on"

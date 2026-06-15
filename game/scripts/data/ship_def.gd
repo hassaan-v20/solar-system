@@ -23,6 +23,9 @@ extends Resource
 @export var reverse_accel: float = 16.0         # reverse thrust — weaker than forward (realistic)
 @export var strafe_accel: float = 20.0          # RCS lateral + vertical thrust (m/s²)
 @export var boost_accel_mult: float = 1.8
+@export var boost_capacity: float = 3.0         # seconds of continuous boost when the reserve is full
+@export var boost_drain: float = 1.0            # reserve spent per second while boosting
+@export var boost_regen: float = 0.6            # reserve recovered per second while not boosting
 @export var assist_response: float = 3.0        # how hard flight assist pulls uncommanded drift to rest (1/s)
 @export var assist_decel: float = 34.0          # RCS decel budget the assist may spend (m/s²)
 @export var brake_decel: float = 60.0           # active brake (Ctrl): a firm all-axis stop (m/s²)

@@ -14,6 +14,9 @@ extends RigidBody3D
 var current_hull: float = 0.0
 var current_shield: float = 0.0
 var is_boosting: bool = false
+const BOOST_RELOCK_FRAC := 0.3    # after a full drain, must recharge to this fraction to boost again
+var boost_energy: float = 0.0     # boost reserve (seconds); drains while boosting, refills when idle
+var boost_locked: bool = false    # true after a full drain until the reserve recovers (read by HUD)
 var throttle: float = 0.0   # forward thrust 0..1 this frame; read by ShipFX for engine flare
 var alive: bool = true
 var flight_assist: bool = true   # on = coupled (RCS holds station); off = raw drift (read by HUD)
@@ -54,6 +57,7 @@ func _ready() -> void:
 	flight_assist = ship_def.flight_assist_default
 	current_hull = ship_def.hull_max
 	current_shield = ship_def.shield_max
+	boost_energy = ship_def.boost_capacity
 
 func _unhandled_input(event: InputEvent) -> void:
 	# Only the owning peer reads input (M5). Single-player has default authority.
@@ -144,7 +148,7 @@ func _integrate_translation(state: PhysicsDirectBodyState3D, dt: float) -> void:
 	# While the options menu is open the pilot inputs read neutral, so the ship just
 	# coasts (assist still settles it) instead of flying on a held key.
 	var locked := Settings.input_locked
-	is_boosting = not locked and Input.is_action_pressed("boost")
+	_update_boost(dt, not locked and Input.is_action_pressed("boost"))
 	var braking := not locked and Input.is_action_pressed("brake")
 	var thrust := 0.0 if locked else Input.get_axis("thrust_back", "thrust_forward")   # +forward, −reverse
 	var strafe := 0.0 if locked else Input.get_axis("strafe_left", "strafe_right")
@@ -170,6 +174,21 @@ func _integrate_translation(state: PhysicsDirectBodyState3D, dt: float) -> void:
 		_apply_flight_assist(state, dt, thrust, strafe, lift)
 
 	_govern_speed(state, braking)
+
+## Boost is a limited reserve: it drains while held and recharges when released.
+## Draining it to empty locks boost out until it recovers past BOOST_RELOCK_FRAC, so
+## you can't stutter it at zero. is_boosting gates the accel + speed-cap bonuses.
+func _update_boost(dt: float, want: bool) -> void:
+	if want and not boost_locked and boost_energy > 0.0:
+		is_boosting = true
+		boost_energy = maxf(0.0, boost_energy - ship_def.boost_drain * dt)
+		if boost_energy <= 0.0:
+			boost_locked = true
+	else:
+		is_boosting = false
+		boost_energy = minf(ship_def.boost_capacity, boost_energy + ship_def.boost_regen * dt)
+		if boost_locked and boost_energy >= ship_def.boost_capacity * BOOST_RELOCK_FRAC:
+			boost_locked = false
 
 ## Flight assist (coupled). Works in ship-local space and nulls only the velocity
 ## the pilot isn't commanding — uncommanded fore/aft, sideways, and vertical drift

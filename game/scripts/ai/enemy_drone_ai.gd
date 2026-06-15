@@ -107,7 +107,7 @@ func _physics_process(delta: float) -> void:
 
 	# Fire only when actually lined up on the lead point and in range.
 	var aim_dot := (-global_transform.basis.z).dot(aim)
-	if dist <= enemy_def.preferred_range * 1.8 and aim_dot > 0.992:
+	if dist <= enemy_def.preferred_range * 1.8 and aim_dot > 0.985:
 		_weapon.try_fire()
 
 ## Where to point so a bolt (muzzle speed + our own inherited velocity) intercepts
