@@ -10,7 +10,22 @@ import { Collision } from "./Collision";
 const PANORAMA_URL = "/assets/textures/8k_stars_milky_way.jpg";
 const ASTEROID_URL = "/assets/models/asteroids/asteroids_andromeda.glb";
 const PLANET_URL = "/assets/models/planets/planet_phoenix_1k.glb";
-const ASTEROID_COUNT = 140;
+const ASTEROID_COUNT = 450;
+const STATION_CENTER = new THREE.Vector3(0, 0, -700); // keep rocks out of the station
+
+// A dense field spread along the whole spawn→station corridor (and around the
+// station as cover), so you actually fly through rocks during play — not a sparse
+// shell at the origin that you never touch. Clears the spawn point and the station.
+function asteroidPos(): THREE.Vector3 {
+  const p = new THREE.Vector3();
+  for (let t = 0; t < 10; t++) {
+    p.set((Math.random() * 2 - 1) * 280, (Math.random() * 2 - 1) * 200, 60 - Math.random() * 1010);
+    if (p.length() < 65) continue; // keep the spawn point clear
+    if (p.distanceTo(STATION_CENTER) < 380) continue; // keep the station interior clear
+    return p;
+  }
+  return p.set(260, 180, -350);
+}
 
 export function createWorld(scene: THREE.Scene, renderer: THREE.WebGLRenderer, collision: Collision): void {
   // Layered lighting: a cool hemisphere fill (a gradient, not flat ambient), a warm
@@ -80,12 +95,11 @@ function loadAsteroids(scene: THREE.Scene, collision: Collision): void {
         const src = sources[Math.floor(Math.random() * sources.length)];
         src.geometry.computeBoundingSphere();
         const baseR = src.geometry.boundingSphere?.radius || 1;
-        const target = 2 + Math.random() * 6; // gameplay radius, independent of model size
+        const target = 3 + Math.random() * 6; // gameplay radius, independent of model size
         const m = new THREE.Mesh(src.geometry, src.material); // share geometry/material across instances
         m.scale.setScalar(target / baseR);
         m.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
-        // Shell around the origin so the spawn point stays clear.
-        m.position.copy(new THREE.Vector3().randomDirection().multiplyScalar(45 + Math.random() * 240));
+        m.position.copy(asteroidPos());
         scene.add(m);
         collision.add(m.position.clone(), target * 0.85);
       }
@@ -113,11 +127,11 @@ function fallbackAsteroids(scene: THREE.Scene, collision: Collision): void {
   for (let i = 0; i < ASTEROID_COUNT; i++) {
     const shade = 0.28 + Math.random() * 0.18;
     const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(shade, shade * 0.96, shade * 0.9), roughness: 1, flatShading: true });
-    const r = 2 + Math.random() * 6;
+    const r = 3 + Math.random() * 6;
     const m = new THREE.Mesh(geos[Math.random() < 0.5 ? 0 : 1], mat);
     m.scale.setScalar(r);
     m.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
-    m.position.copy(new THREE.Vector3().randomDirection().multiplyScalar(45 + Math.random() * 240));
+    m.position.copy(asteroidPos());
     scene.add(m);
     collision.add(m.position.clone(), r * 0.85);
   }
