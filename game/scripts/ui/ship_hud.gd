@@ -123,6 +123,12 @@ func _ready() -> void:
 	indicators.local_ship = ship
 	root.add_child(indicators)
 
+	# Floating health bars over drones + teammate ships.
+	var bars := WorldHealthBars.new()
+	bars.camera = camera
+	bars.local_ship = ship
+	root.add_child(bars)
+
 func _make_label(parent: Node) -> Label:
 	var l := Label.new()
 	parent.add_child(l)
@@ -285,4 +291,10 @@ func _process(_delta: float) -> void:
 		_cargo_label.text = "CARGO   %d/%d  •  %d cr" % [ship.cargo.slots_used(), ship.cargo.max_slots, ship.cargo.salvage_value]
 	_threat_label.text = "THREAT  %d%%" % int(_heat * 100.0)
 	_threat_label.modulate = Color(1, 1, 1).lerp(Color(1.0, 0.3, 0.25), _heat)
+	# Your ship is gone — make it explicit (mission state may still be in progress
+	# while a teammate fights on; that banner overrides this if/when it arrives).
+	if not ship.alive and not _status_label.visible:
+		_status_label.text = "SHIP DESTROYED"
+		_status_label.modulate = Color(1.0, 0.3, 0.25)
+		_status_label.visible = true
 	_update_markers()

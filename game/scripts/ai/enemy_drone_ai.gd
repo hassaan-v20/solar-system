@@ -143,6 +143,13 @@ func _intercept_time(p: Vector3, vrel: Vector3, bs: float) -> float:
 # get_velocity() is inherited from CharacterBody3D (returns `velocity`), so the
 # weapon's bolt-inheritance and the player's lead pip read it without an override.
 
+## 0..1 hull fraction for the floating health bar. In co-op _hull is replicated
+## from the host (see main._add_drone_synchronizer), so clients read it too.
+func health_fraction() -> float:
+	if enemy_def == null or enemy_def.hull_max <= 0.0:
+		return 1.0
+	return clampf(_hull / enemy_def.hull_max, 0.0, 1.0)
+
 func apply_damage(amount: float) -> void:
 	_hull = maxf(0.0, _hull - amount)
 	if _hull <= 0.0:

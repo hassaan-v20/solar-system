@@ -289,6 +289,9 @@ func _add_drone_synchronizer(drone: Node) -> void:
 	for path in [NodePath(".:position"), NodePath(".:rotation")]:
 		cfg.add_property(path)
 		cfg.property_set_replication_mode(path, SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
+	# Hull so clients can draw an accurate health bar (host adjudicates damage).
+	cfg.add_property(NodePath(".:_hull"))
+	cfg.property_set_replication_mode(NodePath(".:_hull"), SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
 	var sync := MultiplayerSynchronizer.new()
 	sync.name = "Sync"   # stable path so the host's drone state replicates to clients
 	sync.replication_config = cfg

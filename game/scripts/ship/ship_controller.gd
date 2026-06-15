@@ -32,6 +32,8 @@ const NET_LERP_RATE := 18.0
 var net_position: Vector3 = Vector3.ZERO
 var net_rotation: Vector3 = Vector3.ZERO
 
+var _death_shown: bool = false   # co-op: spawn the wreck explosion once per ship
+
 var _mouse_delta: Vector2 = Vector2.ZERO
 
 func _ready() -> void:
@@ -74,6 +76,13 @@ func _physics_process(delta: float) -> void:
 	# on the host. (In solo, apply_damage already set this.)
 	if alive and current_hull <= 0.0:
 		alive = false
+	# Death FX once per ship, on whichever peer first sees hull hit zero (the host sets
+	# it via apply_damage, clients via the replicated hull). Solo keeps using main's
+	# own ship_destroyed handler, so guard on Net.active to avoid a double explosion.
+	if current_hull <= 0.0 and not _death_shown:
+		_death_shown = true
+		if Net.active:
+			Explosion.spawn(get_tree().current_scene, global_position, 3.5, Color(1.0, 0.55, 0.2))
 	if mine:
 		# Publish our live pose for remote puppets to interpolate toward.
 		net_position = position
