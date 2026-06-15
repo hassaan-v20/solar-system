@@ -3,16 +3,17 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { ShipController } from "../ship/ShipController";
 import { Combat } from "../combat/Combat";
 import { Director } from "../combat/Director";
-import { Collision } from "../world/Collision";
 
 type State = "approach" | "defend" | "success" | "failed";
 
-const DOCK_RADIUS = 430; // trigger docking on approach, before the solid core
+// The station is a dock target, not an obstacle — you fly into it to begin. A solid
+// collider (a single sphere can't match this irregular hull) just walled off the
+// approach, so it's intentionally non-solid; asteroids are the things you collide with.
+const DOCK_RADIUS = 320; // dock when you're well inside the massive hull
 const DEFEND_DURATION = 90;
 const STATION_POS = new THREE.Vector3(0, 0, -700);
 const STATION_URL = "/assets/models/station/spacestation_7.glb";
 const STATION_SIZE = 820; // longest-axis target — a genuinely massive derelict
-const STATION_COLLIDER_R = 280; // solid core (< DOCK_RADIUS so you dock before bonking)
 
 // Single-player Ghost Station defend, ported from the Godot CoopRaid flow: fly into
 // the derelict station to begin, then hold for DEFEND_DURATION while drone waves
@@ -23,9 +24,8 @@ export class Mission {
   readonly stationPosition = STATION_POS.clone();
   private left = DEFEND_DURATION;
 
-  constructor(scene: THREE.Scene, private ship: ShipController, private combat: Combat, private director: Director, collision: Collision) {
+  constructor(scene: THREE.Scene, private ship: ShipController, private combat: Combat, private director: Director) {
     this.buildStation(scene);
-    collision.add(this.stationPosition, STATION_COLLIDER_R); // solid hull core
   }
 
   /** Station waypoint for the HUD while approaching; null once the raid is live. */

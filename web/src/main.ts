@@ -84,7 +84,7 @@ const hud = new Hud(readout, objectiveEl);
 const hudOverlay = new HudOverlay(app, camera);
 const combat = new Combat(scene, ship);
 const director = new Director(combat, ship);
-const mission = new Mission(scene, ship, combat, director, collision);
+const mission = new Mission(scene, ship, combat, director);
 
 const input = new Input(renderer.domElement);
 
