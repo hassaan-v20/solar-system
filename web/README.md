@@ -25,7 +25,10 @@ npm run build       # typecheck + production bundle to dist/
   assist, finite boost reserve). Controls: **W/S** thrust · **mouse** aim · **A/D**
   roll · **Q/E** strafe · **Space/C** up·down · **Shift** boost · **Ctrl** brake ·
   **Z** flight-assist. Click the canvas to capture the mouse; **Esc** releases it.
-- Chase camera, procedural asteroid field, starfield, real ship GLB.
+- Chase camera, real ship GLB, real GLB asteroid field, distant planet backdrop.
+- 8K Milky Way skybox (equirectangular, also a subtle IBL env) + UnrealBloom glow
+  and ACES tonemapping — porting the Godot raid look. (The 89 MB nebula HDR was too
+  heavy for the web; the 1.8 MB panorama is used instead.)
 
 ## Next
 
