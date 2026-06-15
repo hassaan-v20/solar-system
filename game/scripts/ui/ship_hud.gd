@@ -117,6 +117,12 @@ func _ready() -> void:
 	Settings.changed.connect(_apply_hud_settings)
 	_apply_hud_settings()
 
+	# Off-screen direction arrows: green → teammates (co-op), red → enemies.
+	var indicators := TargetIndicators.new()
+	indicators.camera = camera
+	indicators.local_ship = ship
+	root.add_child(indicators)
+
 func _make_label(parent: Node) -> Label:
 	var l := Label.new()
 	parent.add_child(l)

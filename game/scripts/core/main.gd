@@ -69,6 +69,7 @@ var _run_finished: bool = false
 var _spawner: MultiplayerSpawner
 var _enemy_spawner: MultiplayerSpawner   # co-op: host spawns drones, replicated to all
 var _coop_ships: Array = []              # the player ships (host-side, for drone targeting)
+var _coop_raid: CoopRaid                 # co-op mission: dock to start, then defend
 
 func _ready() -> void:
 	_setup_input()
@@ -144,6 +145,18 @@ func _setup_coop() -> void:
 	_enemy_spawner.spawn_path = _enemy_spawner.get_path_to(enemies_root)
 	_enemy_spawner.spawn_function = _spawn_drone
 
+	# Derelict station + dock zone, built identically on every peer (deterministic).
+	# Flying in and docking begins the raid; CoopRaid drives the defend objective and
+	# (host-side) starts the drone waves. Until then it's a calm approach.
+	var mdef := load("res://data/missions/ghost_station.tres") as MissionDef
+	var dock := _build_station(mdef.station_distance if mdef != null else 500.0)
+	_coop_raid = CoopRaid.new()
+	_coop_raid.name = "CoopRaid"   # stable path for its RPCs (objective/state fan-out)
+	_coop_raid.dock_zone = dock
+	add_child(_coop_raid)
+	if multiplayer.is_server():
+		_coop_raid.started.connect(_start_coop_waves)
+
 	# Spawn only once everyone has loaded (host-side), then announce we're in.
 	Net.all_peers_in_raid.connect(_on_all_in_raid)
 	Net.report_in_raid()
@@ -159,8 +172,12 @@ func _on_all_in_raid(peer_ids: Array) -> void:
 		var s: Node = _spawner.spawn({"peer": sorted[slot], "slot": slot})
 		if s != null:
 			_coop_ships.append(s)
+	# Drone waves don't start until a player docks at the station — CoopRaid emits
+	# `started`, which we connected to _start_coop_waves in _setup_coop.
 
-	# Host-only: escalating drone waves that hunt the players, spawned across the wire.
+## Host: a player docked, so the station "wakes up" — start the escalating drone
+## waves that hunt the players (replicated to all peers via the enemy spawner).
+func _start_coop_waves() -> void:
 	var heat := HeatDirector.new()
 	heat.players = _coop_ships
 	heat.spawn_override = _coop_spawn_drone
@@ -183,11 +200,28 @@ func _spawn_ship(data: Dictionary) -> Node:
 	var hsync := _add_ship_synchronizer(ship)
 	ship.set_multiplayer_authority(peer_id)   # recursive: transform sync + weapon
 	hsync.set_multiplayer_authority(1)         # but HEALTH is host-authoritative (damage adjudicated there)
+	ship.add_to_group("players")               # HUD teammate arrows + CoopRaid alive-check
 	var mine := " (MINE)" if peer_id == multiplayer.get_unique_id() else ""
 	print("raid: spawned %s authority=%d slot=%d%s" % [ship.name, peer_id, slot, mine])
 	if peer_id == multiplayer.get_unique_id():
 		_attach_local_view.call_deferred(ship)
+	else:
+		_add_nameplate(ship, slot)             # tag teammates (not your own ship)
 	return ship
+
+## Slot-coloured, billboarded tag floating over a teammate's ship so co-op players
+## can tell each other apart. Shown only on other players' ships, not your own.
+func _add_nameplate(ship: ShipController, slot: int) -> void:
+	var tag := Label3D.new()
+	tag.text = "HOST" if slot == 0 else "P%d" % (slot + 1)
+	tag.modulate = PEER_HULL_COLORS[slot % PEER_HULL_COLORS.size()]
+	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	tag.no_depth_test = true              # readable even when the ship is behind cover
+	tag.pixel_size = 0.035
+	tag.font_size = 72
+	tag.outline_size = 10
+	tag.position = Vector3(0, 5.0, 0)     # float above the hull
+	ship.add_child(tag)
 
 func _attach_local_view(ship: ShipController) -> void:
 	_ship = ship
