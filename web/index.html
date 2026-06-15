@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Stellar</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
+      #app { position: fixed; inset: 0; }
+      canvas { display: block; }
+
+      #hud {
+        position: fixed; inset: 0; pointer-events: none;
+        font: 15px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+        color: #fff; text-shadow: 0 0 4px #000;
+      }
+      #readout { position: absolute; top: 18px; left: 22px; white-space: pre; opacity: 0.92; }
+      #crosshair {
+        position: absolute; left: 50%; top: 50%; width: 8px; height: 8px;
+        transform: translate(-50%, -50%); border: 1px solid rgba(255,255,255,0.7);
+        border-radius: 50%;
+      }
+      #click-to-fly {
+        position: fixed; inset: 0; display: grid; place-items: center;
+        background: rgba(0,0,0,0.45); color: #cfe6ff; cursor: pointer;
+        font: 18px/1.6 ui-monospace, monospace; text-align: center; letter-spacing: 0.5px;
+      }
+      #click-to-fly small { color: #8fb0c8; display: block; margin-top: 10px; font-size: 13px; }
+      .hidden { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="hud">
+      <div id="readout"></div>
+      <div id="crosshair"></div>
+    </div>
+    <div id="click-to-fly">
+      <div>
+        CLICK TO FLY
+        <small>
+          W/S thrust &nbsp;·&nbsp; mouse aim &nbsp;·&nbsp; A/D roll &nbsp;·&nbsp; Q/E strafe
+          &nbsp;·&nbsp; Space/C up·down &nbsp;·&nbsp; Shift boost &nbsp;·&nbsp; Ctrl brake &nbsp;·&nbsp; Z flight-assist
+          <br />Esc releases the mouse
+        </small>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

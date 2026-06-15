@@ -1,0 +1,166 @@
+import * as THREE from "three";
+import { Input } from "../core/Input";
+import { clamp, moveToward } from "../core/mathf";
+import { ShipConfig, WAYFARER } from "./shipConfig";
+
+// Newtonian rigid-body flight, ported from Godot's ship_controller.gd. Thrust and
+// steering are accelerations applied to conserved linear/angular momentum, so the
+// ship coasts and drifts. Flight assist (Z) is an RCS controller that nulls the
+// velocity/spin the pilot isn't commanding, within a thrust budget (coupled flight).
+//
+// Convention: forward is local -Z, up is +Y (matches three's camera + Godot).
+// `velocity` and `angularVelocity` are world-space, like Godot's body state.
+export class ShipController {
+  readonly object = new THREE.Group();
+  readonly velocity = new THREE.Vector3();
+  readonly angularVelocity = new THREE.Vector3();
+
+  flightAssist: boolean;
+  isBoosting = false;
+  boostEnergy: number;
+  boostLocked = false;
+  throttle = 0; // forward thrust 0..1 this frame (for engine FX later)
+
+  // scratch vectors reused each frame (no per-frame allocation)
+  private readonly _inv = new THREE.Quaternion();
+  private readonly _w = new THREE.Vector3();
+  private readonly _cmd = new THREE.Vector3();
+  private readonly _vLocal = new THREE.Vector3();
+  private readonly _thrust = new THREE.Vector3();
+  private readonly _dq = new THREE.Quaternion();
+  private readonly _axis = new THREE.Vector3();
+
+  constructor(public cfg: ShipConfig = WAYFARER) {
+    this.flightAssist = cfg.flightAssistDefault;
+    this.boostEnergy = cfg.boostCapacity;
+  }
+
+  get speed(): number {
+    return this.velocity.length();
+  }
+
+  update(dt: number, input: Input): void {
+    this._inv.copy(this.object.quaternion).invert();
+    this.integrateRotation(dt, input);
+    this.integrateTranslation(dt, input);
+    this.object.position.addScaledVector(this.velocity, dt);
+  }
+
+  private integrateRotation(dt: number, input: Input): void {
+    const c = this.cfg;
+    const { dx, dy } = input.consumeMouse();
+    // Mouse + roll keys feed a commanded turn RATE (so steering has angular inertia).
+    const roll = input.axis("KeyD", "KeyA"); // A rolls left, D rolls right
+    this._cmd.set(
+      clamp(-dy * c.mouseSens, -c.turnRate, c.turnRate), // pitch (local x)
+      clamp(-dx * c.mouseSens, -c.turnRate, c.turnRate), // yaw   (local y)
+      clamp(roll * c.rollRate, -c.rollRate, c.rollRate), // roll  (local z)
+    );
+
+    // Current spin in local axes, ramped toward the command (assist damps the rest).
+    this._w.copy(this.angularVelocity).applyQuaternion(this._inv);
+    for (const k of ["x", "y", "z"] as const) {
+      if (Math.abs(this._cmd[k]) > 1e-4) {
+        this._w[k] = moveToward(this._w[k], this._cmd[k], c.turnAccel * dt);
+      } else if (this.flightAssist) {
+        this._w[k] = moveToward(this._w[k], 0, c.rotAssist * dt);
+      }
+    }
+    this.angularVelocity.copy(this._w).applyQuaternion(this.object.quaternion);
+
+    // Integrate orientation by the world-space angular velocity.
+    const angle = this.angularVelocity.length() * dt;
+    if (angle > 1e-6) {
+      this._axis.copy(this.angularVelocity).normalize();
+      this._dq.setFromAxisAngle(this._axis, angle);
+      this.object.quaternion.premultiply(this._dq).normalize();
+    }
+  }
+
+  private integrateTranslation(dt: number, input: Input): void {
+    const c = this.cfg;
+    const thrust = input.axis("KeyS", "KeyW"); // +forward / −reverse
+    const strafe = input.axis("KeyQ", "KeyE");
+    const lift = input.axis("KeyC", "Space");
+    const braking = input.held("ControlLeft") || input.held("ControlRight");
+    if (this._zPressed(input)) this.flightAssist = !this.flightAssist;
+
+    this.updateBoost(dt, input.held("ShiftLeft") || input.held("ShiftRight"));
+    this.throttle = clamp(thrust, 0, 1);
+
+    const boostMult = this.isBoosting ? c.boostAccelMult : 1;
+    const fwdAccel = (thrust >= 0 ? c.acceleration : c.reverseAccel) * boostMult;
+    this._thrust.set(strafe * c.strafeAccel, lift * c.strafeAccel, -thrust * fwdAccel); // nose = -Z
+    this._thrust.applyQuaternion(this.object.quaternion); // local → world
+    this.velocity.addScaledVector(this._thrust, dt);
+
+    if (braking) {
+      this.moveVecToward(this.velocity, c.brakeDecel * dt);
+    } else if (this.flightAssist) {
+      this.applyFlightAssist(dt, thrust, strafe, lift);
+    }
+    this.governSpeed(braking);
+  }
+
+  // Flight assist: in ship-local space, bleed off only the velocity the pilot isn't
+  // commanding, capped by the RCS decel budget so it reads as thrusters, not magic.
+  private applyFlightAssist(dt: number, thrust: number, strafe: number, lift: number): void {
+    this._vLocal.copy(this.velocity).applyQuaternion(this._inv);
+    this._vLocal.x = this.nullAxis(this._vLocal.x, Math.abs(strafe) > 0.01, dt);
+    this._vLocal.y = this.nullAxis(this._vLocal.y, Math.abs(lift) > 0.01, dt);
+    this._vLocal.z = this.nullAxis(this._vLocal.z, Math.abs(thrust) > 0.01, dt);
+    this.velocity.copy(this._vLocal).applyQuaternion(this.object.quaternion);
+  }
+
+  private nullAxis(v: number, commanded: boolean, dt: number): number {
+    if (commanded) return v;
+    const want = -v * clamp(this.cfg.assistResponse * dt, 0, 1);
+    const budget = this.cfg.assistDecel * dt;
+    return v + clamp(want, -budget, budget);
+  }
+
+  // Powered cap with assist/brake; a raw Newtonian coast keeps momentum up to the
+  // absolute boost ceiling — so boosting and releasing leaves you sliding fast.
+  private governSpeed(braking: boolean): void {
+    const c = this.cfg;
+    const sp = this.velocity.length();
+    if (this.flightAssist || braking) {
+      const cap = this.isBoosting ? c.boostSpeed : c.maxSpeed;
+      if (sp > cap) this.velocity.multiplyScalar(cap / sp);
+    } else if (sp > c.boostSpeed) {
+      this.velocity.multiplyScalar(c.boostSpeed / sp);
+    }
+  }
+
+  // Finite boost reserve: drains while held, refills when idle, locks out on empty
+  // until it recovers past boostRelockFrac (no stutter-boosting at zero).
+  private updateBoost(dt: number, want: boolean): void {
+    const c = this.cfg;
+    if (want && !this.boostLocked && this.boostEnergy > 0) {
+      this.isBoosting = true;
+      this.boostEnergy = Math.max(0, this.boostEnergy - c.boostDrain * dt);
+      if (this.boostEnergy <= 0) this.boostLocked = true;
+    } else {
+      this.isBoosting = false;
+      this.boostEnergy = Math.min(c.boostCapacity, this.boostEnergy + c.boostRegen * dt);
+      if (this.boostLocked && this.boostEnergy >= c.boostCapacity * c.boostRelockFrac) {
+        this.boostLocked = false;
+      }
+    }
+  }
+
+  private moveVecToward(v: THREE.Vector3, maxDelta: number): void {
+    const len = v.length();
+    if (len <= maxDelta) v.set(0, 0, 0);
+    else v.multiplyScalar((len - maxDelta) / len);
+  }
+
+  // Edge-detect Z (toggle flight assist on press, not every frame it's held).
+  private _zWasDown = false;
+  private _zPressed(input: Input): boolean {
+    const down = input.held("KeyZ");
+    const pressed = down && !this._zWasDown;
+    this._zWasDown = down;
+    return pressed;
+  }
+}
