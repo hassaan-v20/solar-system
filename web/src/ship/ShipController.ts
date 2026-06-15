@@ -19,6 +19,7 @@ export class ShipController {
   isBoosting = false;
   boostEnergy: number;
   boostLocked = false;
+  boostLatched = false; // L3 toggles sustained boost; cleared by L2 or a full drain
   throttle = 0; // forward thrust 0..1 this frame (for engine FX later)
 
   // scratch vectors reused each frame (no per-frame allocation)
@@ -85,8 +86,10 @@ export class ShipController {
     const lift = input.lift();
     const braking = input.brake();
     if (input.assistTogglePressed()) this.flightAssist = !this.flightAssist;
+    if (input.boostTogglePressed()) this.boostLatched = !this.boostLatched;
+    if (input.boostCancelPressed()) this.boostLatched = false;
 
-    this.updateBoost(dt, input.boost());
+    this.updateBoost(dt, input.boostHeld() || this.boostLatched);
     this.throttle = clamp(thrust, 0, 1);
 
     const boostMult = this.isBoosting ? c.boostAccelMult : 1;
@@ -140,7 +143,10 @@ export class ShipController {
     if (want && !this.boostLocked && this.boostEnergy > 0) {
       this.isBoosting = true;
       this.boostEnergy = Math.max(0, this.boostEnergy - c.boostDrain * dt);
-      if (this.boostEnergy <= 0) this.boostLocked = true;
+      if (this.boostEnergy <= 0) {
+        this.boostLocked = true;
+        this.boostLatched = false; // drained out — drop the toggle so it doesn't auto-re-engage
+      }
     } else {
       this.isBoosting = false;
       this.boostEnergy = Math.min(c.boostCapacity, this.boostEnergy + c.boostRegen * dt);

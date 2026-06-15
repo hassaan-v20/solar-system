@@ -20,6 +20,7 @@ export class Input {
   private axes: number[] = [];
   private buttons: number[] = [];
   private assistPrev = false;
+  private edgePrev = new Map<number, boolean>();
 
   constructor(canvas: HTMLElement) {
     // Capture the mouse on any click. (The start overlay sits above the canvas and
@@ -85,8 +86,17 @@ export class Input {
     const pad = (this.btn(4) ? 1 : 0) - (this.btn(5) ? 1 : 0); // LB/RB
     return clamp(this.kbAxis("KeyD", "KeyA") + pad, -1, 1);
   }
-  boost(): boolean {
-    return this.held("ShiftLeft") || this.held("ShiftRight") || this.btn(7) || this.btn(10); // RT or L3
+  /** Momentary boost: RT or Shift held. (L3 latches boost — see boostTogglePressed.) */
+  boostHeld(): boolean {
+    return this.held("ShiftLeft") || this.held("ShiftRight") || this.btn(7); // RT
+  }
+  /** L3 press toggles sustained (latched) boost. */
+  boostTogglePressed(): boolean {
+    return this.gpEdge(10); // L3 (left-stick click)
+  }
+  /** L2 press cancels latched boost (and brakes). */
+  boostCancelPressed(): boolean {
+    return this.gpEdge(6); // L2 / LT
   }
   brake(): boolean {
     return this.held("ControlLeft") || this.held("ControlRight") || this.btn(6); // LT
@@ -119,5 +129,12 @@ export class Input {
   }
   private btn(i: number, threshold = 0.4): boolean {
     return (this.buttons[i] ?? 0) > threshold;
+  }
+  /** Rising edge for a gamepad button (call at most once per frame per index). */
+  private gpEdge(i: number): boolean {
+    const down = this.btn(i);
+    const pressed = down && !(this.edgePrev.get(i) ?? false);
+    this.edgePrev.set(i, down);
+    return pressed;
   }
 }
