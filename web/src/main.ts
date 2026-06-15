@@ -26,13 +26,19 @@ const ship = createShip(scene);
 const chase = new ChaseCamera(camera);
 const hud = new Hud(readout);
 
-const input = new Input(renderer.domElement, (locked) => clickToFly.classList.toggle("hidden", locked));
+const input = new Input(renderer.domElement);
 
 let first = true;
+let started = false;
 const clock = new THREE.Clock();
 
 function frame(): void {
   const dt = Math.min(clock.getDelta(), 1 / 30); // clamp so a stutter can't fling the ship
+  input.poll(); // gamepad is snapshot-based — refresh each frame
+  if (!started && (input.locked || input.gamepadActive())) {
+    started = true; // dismiss the start overlay on first mouse-capture or gamepad input
+    clickToFly.classList.add("hidden");
+  }
   ship.update(dt, input);
   chase.update(dt, ship.object, first);
   hud.update(ship);

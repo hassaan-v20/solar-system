@@ -49,11 +49,12 @@ export class ShipController {
   private integrateRotation(dt: number, input: Input): void {
     const c = this.cfg;
     const { dx, dy } = input.consumeMouse();
-    // Mouse + roll keys feed a commanded turn RATE (so steering has angular inertia).
-    const roll = input.axis("KeyD", "KeyA"); // A rolls left, D rolls right
+    const aim = input.aimStick();
+    const roll = input.roll();
+    // Mouse + right-stick + roll feed a commanded turn RATE (steering has inertia).
     this._cmd.set(
-      clamp(-dy * c.mouseSens, -c.turnRate, c.turnRate), // pitch (local x)
-      clamp(-dx * c.mouseSens, -c.turnRate, c.turnRate), // yaw   (local y)
+      clamp(-dy * c.mouseSens + aim.y * c.turnRate, -c.turnRate, c.turnRate), // pitch (local x)
+      clamp(-dx * c.mouseSens - aim.x * c.turnRate, -c.turnRate, c.turnRate), // yaw   (local y)
       clamp(roll * c.rollRate, -c.rollRate, c.rollRate), // roll  (local z)
     );
 
@@ -79,13 +80,13 @@ export class ShipController {
 
   private integrateTranslation(dt: number, input: Input): void {
     const c = this.cfg;
-    const thrust = input.axis("KeyS", "KeyW"); // +forward / −reverse
-    const strafe = input.axis("KeyQ", "KeyE");
-    const lift = input.axis("KeyC", "Space");
-    const braking = input.held("ControlLeft") || input.held("ControlRight");
-    if (this._zPressed(input)) this.flightAssist = !this.flightAssist;
+    const thrust = input.thrust(); // +forward / −reverse
+    const strafe = input.strafe();
+    const lift = input.lift();
+    const braking = input.brake();
+    if (input.assistTogglePressed()) this.flightAssist = !this.flightAssist;
 
-    this.updateBoost(dt, input.held("ShiftLeft") || input.held("ShiftRight"));
+    this.updateBoost(dt, input.boost());
     this.throttle = clamp(thrust, 0, 1);
 
     const boostMult = this.isBoosting ? c.boostAccelMult : 1;
@@ -153,14 +154,5 @@ export class ShipController {
     const len = v.length();
     if (len <= maxDelta) v.set(0, 0, 0);
     else v.multiplyScalar((len - maxDelta) / len);
-  }
-
-  // Edge-detect Z (toggle flight assist on press, not every frame it's held).
-  private _zWasDown = false;
-  private _zPressed(input: Input): boolean {
-    const down = input.held("KeyZ");
-    const pressed = down && !this._zWasDown;
-    this._zWasDown = down;
-    return pressed;
   }
 }
