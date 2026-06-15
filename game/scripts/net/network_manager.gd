@@ -90,6 +90,11 @@ func start_coop_raid() -> void:
 @rpc("authority", "call_remote", "reliable")
 func _load_raid(seed: int) -> void:
 	world_seed = seed
+	# Clear the lobby's menu lock. The client enters the raid via this RPC, not the
+	# panel's Launch button, so it never ran _launch_coop's unlock. Left set, the
+	# client's ship can still rotate (mouse-look isn't gated) but can't thrust or
+	# fire (both gated on Settings.input_locked) — i.e. "only able to spin".
+	Settings.input_locked = false
 	get_tree().change_scene_to_file(RAID_SCENE)
 
 ## Called by the raid scene (every peer) once it has loaded and its spawner exists.
