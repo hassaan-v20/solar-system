@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { Input } from "./core/Input";
 import { ChaseCamera } from "./camera/ChaseCamera";
 import { createWorld } from "./world/createWorld";
+import { Collision } from "./world/Collision";
 import { createShip } from "./ship/createShip";
 import { Hud } from "./ui/Hud";
 import { HudOverlay } from "./ui/HudOverlay";
@@ -75,14 +76,15 @@ composer.addPass(
   }),
 );
 
-createWorld(scene, renderer);
+const collision = new Collision();
+createWorld(scene, renderer, collision);
 const ship = createShip(scene);
 const chase = new ChaseCamera(camera);
 const hud = new Hud(readout, objectiveEl);
 const hudOverlay = new HudOverlay(app, camera);
 const combat = new Combat(scene, ship);
 const director = new Director(combat, ship);
-const mission = new Mission(scene, ship, combat, director);
+const mission = new Mission(scene, ship, combat, director, collision);
 
 const input = new Input(renderer.domElement);
 
@@ -98,6 +100,7 @@ function frame(): void {
     clickToFly.classList.add("hidden");
   }
   ship.update(dt, input);
+  collision.resolveShip(ship); // push the ship out of asteroids / the station hull
   combat.update(dt, input.fire());
   director.update(dt);
   mission.update(dt);

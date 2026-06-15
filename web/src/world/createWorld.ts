@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { Collision } from "./Collision";
 
 // The sector: an equirectangular Milky Way skybox (also used as a subtle IBL env),
 // a real GLB asteroid field, and a distant planet for depth — porting the Godot
@@ -11,7 +12,7 @@ const ASTEROID_URL = "/assets/models/asteroids/asteroids_andromeda.glb";
 const PLANET_URL = "/assets/models/planets/planet_phoenix_1k.glb";
 const ASTEROID_COUNT = 140;
 
-export function createWorld(scene: THREE.Scene, renderer: THREE.WebGLRenderer): void {
+export function createWorld(scene: THREE.Scene, renderer: THREE.WebGLRenderer, collision: Collision): void {
   // Layered lighting: a cool hemisphere fill (a gradient, not flat ambient), a warm
   // key, and a cool rim — plus a synthesized soft IBL environment for ambient +
   // reflections. The visible Milky Way photo is too dark to light the scene, so we
@@ -26,7 +27,7 @@ export function createWorld(scene: THREE.Scene, renderer: THREE.WebGLRenderer): 
 
   makeEnvironment(scene, renderer);
   loadSky(scene);
-  loadAsteroids(scene);
+  loadAsteroids(scene, collision);
   loadPlanet(scene);
 }
 
@@ -62,7 +63,7 @@ function loadSky(scene: THREE.Scene): void {
   });
 }
 
-function loadAsteroids(scene: THREE.Scene): void {
+function loadAsteroids(scene: THREE.Scene, collision: Collision): void {
   new GLTFLoader().load(
     ASTEROID_URL,
     (gltf) => {
@@ -72,7 +73,7 @@ function loadAsteroids(scene: THREE.Scene): void {
         if (m.isMesh && m.geometry) sources.push(m);
       });
       if (sources.length === 0) {
-        fallbackAsteroids(scene);
+        fallbackAsteroids(scene, collision);
         return;
       }
       for (let i = 0; i < ASTEROID_COUNT; i++) {
@@ -86,10 +87,11 @@ function loadAsteroids(scene: THREE.Scene): void {
         // Shell around the origin so the spawn point stays clear.
         m.position.copy(new THREE.Vector3().randomDirection().multiplyScalar(45 + Math.random() * 240));
         scene.add(m);
+        collision.add(m.position.clone(), target * 0.85);
       }
     },
     undefined,
-    () => fallbackAsteroids(scene),
+    () => fallbackAsteroids(scene, collision),
   );
 }
 
@@ -106,15 +108,17 @@ function loadPlanet(scene: THREE.Scene): void {
 }
 
 // Procedural rocks if the GLB is missing, so the field is never empty.
-function fallbackAsteroids(scene: THREE.Scene): void {
+function fallbackAsteroids(scene: THREE.Scene, collision: Collision): void {
   const geos = [0, 1].map((d) => new THREE.IcosahedronGeometry(1, d));
   for (let i = 0; i < ASTEROID_COUNT; i++) {
     const shade = 0.28 + Math.random() * 0.18;
     const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(shade, shade * 0.96, shade * 0.9), roughness: 1, flatShading: true });
+    const r = 2 + Math.random() * 6;
     const m = new THREE.Mesh(geos[Math.random() < 0.5 ? 0 : 1], mat);
-    m.scale.setScalar(2 + Math.random() * 6);
+    m.scale.setScalar(r);
     m.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
     m.position.copy(new THREE.Vector3().randomDirection().multiplyScalar(45 + Math.random() * 240));
     scene.add(m);
+    collision.add(m.position.clone(), r * 0.85);
   }
 }

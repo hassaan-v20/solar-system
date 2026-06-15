@@ -3,14 +3,16 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { ShipController } from "../ship/ShipController";
 import { Combat } from "../combat/Combat";
 import { Director } from "../combat/Director";
+import { Collision } from "../world/Collision";
 
 type State = "approach" | "defend" | "success" | "failed";
 
-const DOCK_RADIUS = 150;
+const DOCK_RADIUS = 430; // trigger docking on approach, before the solid core
 const DEFEND_DURATION = 90;
-const STATION_POS = new THREE.Vector3(0, 0, -520);
+const STATION_POS = new THREE.Vector3(0, 0, -700);
 const STATION_URL = "/assets/models/station/spacestation_7.glb";
-const STATION_SIZE = 280; // longest-axis target in world units
+const STATION_SIZE = 820; // longest-axis target — a genuinely massive derelict
+const STATION_COLLIDER_R = 280; // solid core (< DOCK_RADIUS so you dock before bonking)
 
 // Single-player Ghost Station defend, ported from the Godot CoopRaid flow: fly into
 // the derelict station to begin, then hold for DEFEND_DURATION while drone waves
@@ -21,8 +23,9 @@ export class Mission {
   readonly stationPosition = STATION_POS.clone();
   private left = DEFEND_DURATION;
 
-  constructor(scene: THREE.Scene, private ship: ShipController, private combat: Combat, private director: Director) {
+  constructor(scene: THREE.Scene, private ship: ShipController, private combat: Combat, private director: Director, collision: Collision) {
     this.buildStation(scene);
+    collision.add(this.stationPosition, STATION_COLLIDER_R); // solid hull core
   }
 
   /** Station waypoint for the HUD while approaching; null once the raid is live. */
@@ -71,14 +74,14 @@ export class Mission {
     scene.add(g);
 
     // Findable accents, shown immediately while the (large) model streams in.
-    const core = new THREE.Mesh(new THREE.IcosahedronGeometry(9, 1), new THREE.MeshBasicMaterial({ color: 0x66e0ff }));
+    const core = new THREE.Mesh(new THREE.IcosahedronGeometry(18, 1), new THREE.MeshBasicMaterial({ color: 0x66e0ff }));
     g.add(core);
-    g.add(new THREE.PointLight(0x66e0ff, 6, 260));
-    const beacon = new THREE.Mesh(new THREE.SphereGeometry(3, 8, 8), new THREE.MeshBasicMaterial({ color: 0xff3a2a }));
-    beacon.position.set(0, 48, 0);
+    g.add(new THREE.PointLight(0x66e0ff, 8, 900));
+    const beacon = new THREE.Mesh(new THREE.SphereGeometry(7, 8, 8), new THREE.MeshBasicMaterial({ color: 0xff3a2a }));
+    beacon.position.set(0, 170, 0);
     g.add(beacon);
-    const beaconLight = new THREE.PointLight(0xff3a2a, 4, 320);
-    beaconLight.position.set(0, 48, 0);
+    const beaconLight = new THREE.PointLight(0xff3a2a, 5, 900);
+    beaconLight.position.set(0, 170, 0);
     g.add(beaconLight);
 
     new GLTFLoader().load(
