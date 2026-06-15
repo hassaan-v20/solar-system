@@ -86,7 +86,7 @@ export class Input {
     return clamp(this.kbAxis("KeyD", "KeyA") + pad, -1, 1);
   }
   boost(): boolean {
-    return this.held("ShiftLeft") || this.held("ShiftRight") || this.btn(7); // RT
+    return this.held("ShiftLeft") || this.held("ShiftRight") || this.btn(7) || this.btn(10); // RT or L3
   }
   brake(): boolean {
     return this.held("ControlLeft") || this.held("ControlRight") || this.btn(6); // LT

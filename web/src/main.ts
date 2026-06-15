@@ -8,6 +8,20 @@ import { Hud } from "./ui/Hud";
 const app = document.getElementById("app")!;
 const readout = document.getElementById("readout")!;
 const clickToFly = document.getElementById("click-to-fly")!;
+const fullscreenBtn = document.getElementById("fullscreen-btn")!;
+
+function toggleFullscreen(): void {
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  else document.documentElement.requestFullscreen().catch(() => {});
+}
+// stopPropagation so the button click doesn't also trigger the canvas pointer-lock.
+fullscreenBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  toggleFullscreen();
+});
+window.addEventListener("keydown", (e) => {
+  if (e.code === "KeyF") toggleFullscreen();
+});
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
