@@ -4,8 +4,10 @@ import { ChaseCamera } from "./camera/ChaseCamera";
 import { createWorld } from "./world/createWorld";
 import { createShip } from "./ship/createShip";
 import { Hud } from "./ui/Hud";
+import { HudOverlay } from "./ui/HudOverlay";
 import { Combat } from "./combat/Combat";
 import { Director } from "./combat/Director";
+import { Mission } from "./mission/Mission";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
@@ -13,6 +15,7 @@ import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 
 const app = document.getElementById("app")!;
 const readout = document.getElementById("readout")!;
+const objectiveEl = document.getElementById("objective")!;
 const clickToFly = document.getElementById("click-to-fly")!;
 const fullscreenBtn = document.getElementById("fullscreen-btn")!;
 
@@ -52,9 +55,11 @@ composer.addPass(new OutputPass());
 createWorld(scene, renderer);
 const ship = createShip(scene);
 const chase = new ChaseCamera(camera);
-const hud = new Hud(readout);
+const hud = new Hud(readout, objectiveEl);
+const hudOverlay = new HudOverlay(app, camera);
 const combat = new Combat(scene, ship);
 const director = new Director(combat, ship);
+const mission = new Mission(scene, ship, combat, director);
 
 const input = new Input(renderer.domElement);
 
@@ -72,10 +77,19 @@ function frame(): void {
   ship.update(dt, input);
   combat.update(dt, input.fire());
   director.update(dt);
+  mission.update(dt);
   chase.update(dt, ship.object, first);
-  hud.update(ship, { drones: combat.drones.length, threat: director.heat, weaponHeat: combat.playerWeapon.heatFrac });
+  hud.update(ship, {
+    drones: combat.drones.length,
+    threat: director.heat,
+    weaponHeat: combat.playerWeapon.heatFrac,
+    objective: mission.objective,
+  });
+  const wp = mission.waypoint;
+  hudOverlay.waypoint = wp ? { position: wp, color: "#5cff8c", label: "DOCK" } : null;
   first = false;
   composer.render();
+  hudOverlay.draw(ship, combat); // after the 3D render, so camera matrices are current
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

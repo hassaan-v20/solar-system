@@ -41,6 +41,15 @@ export class Combat {
     this.drones.push(d);
   }
 
+  /** Clear the field (mission end): pop each remaining drone and drop them. */
+  clearDrones(): void {
+    for (const d of this.drones) {
+      this.explode(d.position, 2.0, 0xffa030);
+      d.dispose();
+    }
+    this.drones = [];
+  }
+
   fireFrom(source: THREE.Object3D, team: Team, def: WeaponDef, inheritedVel: THREE.Vector3): void {
     const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(source.quaternion);
     const muzzle = source.position.clone().addScaledVector(dir, 2.6);

@@ -15,10 +15,9 @@
         color: #fff; text-shadow: 0 0 4px #000;
       }
       #readout { position: absolute; top: 18px; left: 22px; white-space: pre; opacity: 0.92; }
-      #crosshair {
-        position: absolute; left: 50%; top: 50%; width: 8px; height: 8px;
-        transform: translate(-50%, -50%); border: 1px solid rgba(255,255,255,0.7);
-        border-radius: 50%;
+      #objective {
+        position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+        text-align: center; font-size: 17px; letter-spacing: 0.4px; color: #dcefff;
       }
       #click-to-fly {
         position: fixed; inset: 0; display: grid; place-items: center;
@@ -43,7 +42,7 @@
     <button id="fullscreen-btn" title="Toggle fullscreen (F)" aria-label="Toggle fullscreen">⛶</button>
     <div id="hud">
       <div id="readout"></div>
-      <div id="crosshair"></div>
+      <div id="objective"></div>
     </div>
     <div id="click-to-fly">
       <div>

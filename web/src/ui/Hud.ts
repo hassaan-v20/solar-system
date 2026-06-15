@@ -4,14 +4,16 @@ export interface HudStats {
   drones: number;
   threat: number; // 0..1
   weaponHeat: number; // 0..1
+  objective: string;
 }
 
-// Flight + combat readout (top-left), mirroring the Godot HUD's text panel. Floating
-// health bars / markers / indicators come back with the full HUD pass.
+// Flight + combat text readout (top-left) + the mission objective banner (top-center).
+// Projected markers, health bars, and indicators live in HudOverlay (2D canvas).
 export class Hud {
-  constructor(private el: HTMLElement) {}
+  constructor(private el: HTMLElement, private objectiveEl: HTMLElement) {}
 
   update(ship: ShipController, stats: HudStats): void {
+    this.objectiveEl.textContent = stats.objective;
     const boostPct = Math.round((ship.boostEnergy / ship.cfg.boostCapacity) * 100);
     const boost = ship.boostLocked ? "RECHARGING" : ship.isBoosting ? "ENGAGED" : `${boostPct}%`;
     this.el.textContent =

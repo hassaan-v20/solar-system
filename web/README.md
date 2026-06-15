@@ -33,10 +33,17 @@ strafe · **Space/C** up·down · **Shift** boost · **Ctrl** brake · **Z** fli
 Controller: left stick move · right stick aim · **RT** fire · **L3** toggle-boost ·
 **LB/RB** roll · **L2** brake · **▲** flight-assist. Click / press a button to start.
 
+- Full HUD (`HudOverlay`, 2D canvas): crosshair + prograde/retrograde + lead pip,
+  floating drone health bars, off-screen enemy arrows / on-screen reticles, a mission
+  waypoint, and bottom-left shield/hull/boost bars. Objective banner is DOM text.
+- Mission (`Mission`): fly into the procedural derelict station to begin, then a 90 s
+  defend against escalating waves (gates the Director); survive = complete, destroyed
+  = failed.
+
 ## Next
 
-Full HUD (health bars, lead pip, off-screen indicators) → mission (the station +
-defend) → co-op via an authoritative **Colyseus** server. See `../docs/CHECKPOINT.md`.
+Co-op via an authoritative **Colyseus** server (rooms, host-authoritative state,
+client interpolation). See `../docs/CHECKPOINT.md` for the feature target.
 
 ## Layout
 

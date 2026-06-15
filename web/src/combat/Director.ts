@@ -14,12 +14,13 @@ const SPAWN_MAX = 130;
 
 export class Director {
   heat = 0;
-  private cooldown = 2; // first wave shortly after start
+  active = false; // the Mission flips this on when the raid starts
+  private cooldown = 2; // first wave shortly after the raid begins
 
   constructor(private combat: Combat, private ship: ShipController) {}
 
   update(dt: number): void {
-    if (!this.ship.alive) return;
+    if (!this.active || !this.ship.alive) return;
     this.heat = clamp(this.heat + dt / TIME_TO_MAX, 0, 1);
     this.cooldown -= dt;
     if (this.cooldown <= 0) {
