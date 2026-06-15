@@ -48,7 +48,8 @@ func _bars(world: Vector3, fracs: PackedFloat32Array, cols: PackedColorArray) ->
 	if camera.is_position_behind(world):
 		return
 	var sp := camera.unproject_position(world)
-	if not Rect2(Vector2.ZERO, size).has_point(sp):
+	# Real viewport size — a CanvasLayer child Control's own `size` can be (0,0).
+	if not Rect2(Vector2.ZERO, get_viewport_rect().size).has_point(sp):
 		return
 	var top := sp + Vector2(-W * 0.5, -Y_OFF)
 	for i in fracs.size():
