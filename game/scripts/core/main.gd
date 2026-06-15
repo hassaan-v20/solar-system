@@ -122,6 +122,12 @@ func _setup_coop() -> void:
 	add_child(ships_root)
 
 	_spawner = MultiplayerSpawner.new()
+	# Stable name: a MultiplayerSpawner identifies itself across peers BY NODE PATH, so
+	# host and client must agree on it. A bare new()+add_child() gets an auto name
+	# (@MultiplayerSpawner@NN) whose counter differs per peer, so the client can't find
+	# the spawner the host names in its spawn packets ("Node not found …"); the ship
+	# never spawns, the local camera never attaches, and the client sees a black screen.
+	_spawner.name = "ShipSpawner"
 	add_child(_spawner)
 	_spawner.spawn_path = _spawner.get_path_to(ships_root)
 	_spawner.spawn_function = _spawn_ship
@@ -131,6 +137,7 @@ func _setup_coop() -> void:
 	enemies_root.name = "Enemies"
 	add_child(enemies_root)
 	_enemy_spawner = MultiplayerSpawner.new()
+	_enemy_spawner.name = "EnemySpawner"   # stable path across peers (see ShipSpawner)
 	add_child(_enemy_spawner)
 	_enemy_spawner.spawn_path = _enemy_spawner.get_path_to(enemies_root)
 	_enemy_spawner.spawn_function = _spawn_drone
@@ -242,6 +249,7 @@ func _add_drone_synchronizer(drone: Node) -> void:
 		cfg.add_property(path)
 		cfg.property_set_replication_mode(path, SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
 	var sync := MultiplayerSynchronizer.new()
+	sync.name = "Sync"   # stable path so the host's drone state replicates to clients
 	sync.replication_config = cfg
 	drone.add_child(sync)
 
