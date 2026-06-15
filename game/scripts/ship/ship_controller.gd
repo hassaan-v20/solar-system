@@ -24,6 +24,14 @@ var cargo: CargoSystem         # set by main when the ship is assembled
 # it to puff the matching RCS nozzle; assist drift-correction feeds it too.
 var rcs_local: Vector3 = Vector3.ZERO
 
+# Networked transform target (M5): the owning peer publishes its live pose here and
+# the MultiplayerSynchronizer replicates it; puppet ships interpolate toward it each
+# frame instead of snapping to every packet, which removes the network jitter that
+# otherwise reads as choppy remote movement.
+const NET_LERP_RATE := 18.0
+var net_position: Vector3 = Vector3.ZERO
+var net_rotation: Vector3 = Vector3.ZERO
+
 var _mouse_delta: Vector2 = Vector2.ZERO
 
 func _ready() -> void:
@@ -54,9 +62,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		# steering sensitivity stays the same at any resolution.
 		_mouse_delta += (event as InputEventMouseMotion).screen_relative
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
 	# Keep the body simulated only on its owner; puppets stay frozen and are posed
-	# by the MultiplayerSynchronizer (transform replication). Cheap, only flips on
+	# below by interpolating toward the replicated transform. Cheap, only flips on
 	# an authority change.
 	var mine := is_multiplayer_authority()
 	if freeze == mine:
@@ -66,8 +74,16 @@ func _physics_process(_delta: float) -> void:
 	# on the host. (In solo, apply_damage already set this.)
 	if alive and current_hull <= 0.0:
 		alive = false
-	if mine and alive and not Settings.input_locked and Input.is_action_just_pressed("toggle_assist"):
-		flight_assist = not flight_assist
+	if mine:
+		# Publish our live pose for remote puppets to interpolate toward.
+		net_position = position
+		net_rotation = rotation
+		if alive and not Settings.input_locked and Input.is_action_just_pressed("toggle_assist"):
+			flight_assist = not flight_assist
+	else:
+		# Puppet: ease toward the networked pose rather than snapping to each packet.
+		var target := Transform3D(Basis.from_euler(net_rotation), net_position)
+		transform = transform.interpolate_with(target, clampf(delta * NET_LERP_RATE, 0.0, 1.0))
 
 ## All motion runs through the physics integrator so momentum, collisions, and the
 ## ship's own thrusters all compose correctly. Only the owner integrates; puppets

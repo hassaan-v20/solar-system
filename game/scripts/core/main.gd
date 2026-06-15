@@ -90,7 +90,9 @@ func _ready() -> void:
 ## Host-authoritative projectile layer (works in solo too; WeaponController finds it
 ## via the "combat_net" group). One per combat scene.
 func _build_combat_net() -> void:
-	add_child((load(COMBAT_NET_SCRIPT) as GDScript).new())
+	var cn: Node = (load(COMBAT_NET_SCRIPT) as GDScript).new()
+	cn.name = "CombatNet"   # stable path so a client's _request_fire RPC routes to the host's instance
+	add_child(cn)
 
 ## Single-player: own ship + camera + HUD + the full Ghost Station mission.
 func _build_solo() -> void:
@@ -176,6 +178,8 @@ func _spawn_ship(data: Dictionary) -> Node:
 	ship.ship_def = (base_def as ShipDef).duplicate()
 	_assemble_ship(ship, PEER_HULL_COLORS[slot % PEER_HULL_COLORS.size()])
 	ship.position = Vector3(slot * 18.0 - 9.0, 0.0, 0.0)
+	ship.net_position = ship.position   # seed the interp target so puppets don't glide in from origin
+	ship.net_rotation = ship.rotation
 	var hsync := _add_ship_synchronizer(ship)
 	ship.set_multiplayer_authority(peer_id)   # recursive: transform sync + weapon
 	hsync.set_multiplayer_authority(1)         # but HEALTH is host-authoritative (damage adjudicated there)
@@ -194,8 +198,11 @@ func _attach_local_view(ship: ShipController) -> void:
 ## (they fly their ship), health replicates from the host (it adjudicates damage).
 ## Returns the health synchronizer so the caller can set its authority to the host.
 func _add_ship_synchronizer(ship: ShipController) -> MultiplayerSynchronizer:
+	# Replicate to net_position/net_rotation (not the live transform): the owner
+	# publishes its pose there and puppets interpolate toward it, so remote ships
+	# glide instead of snapping to each packet (anti-jitter — see ShipController).
 	var tcfg := SceneReplicationConfig.new()
-	for path in [NodePath(".:position"), NodePath(".:rotation")]:
+	for path in [NodePath(".:net_position"), NodePath(".:net_rotation")]:
 		tcfg.add_property(path)
 		tcfg.property_set_replication_mode(path, SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
 	var tsync := MultiplayerSynchronizer.new()

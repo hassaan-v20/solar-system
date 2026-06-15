@@ -17,6 +17,7 @@ func _ready() -> void:
 	_root.name = "Projectiles"
 	add_child(_root)
 	_spawner = MultiplayerSpawner.new()
+	_spawner.name = "BoltSpawner"   # stable path so host-spawned bolts replicate to clients
 	add_child(_spawner)
 	_spawner.spawn_path = _spawner.get_path_to(_root)
 	_spawner.spawn_function = _spawn_from_data
