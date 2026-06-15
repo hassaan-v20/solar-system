@@ -11,19 +11,65 @@ const ASTEROID_URL = "/assets/models/asteroids/asteroids_andromeda.glb";
 const PLANET_URL = "/assets/models/planets/planet_phoenix_1k.glb";
 const ASTEROID_COUNT = 140;
 
-export function createWorld(scene: THREE.Scene, renderer: THREE.WebGLRenderer): void {
+export function createWorld(scene: THREE.Scene, renderer: THREE.WebGLRenderer): { nebula: THREE.Object3D } {
   // Warm key + cool ambient/rim, matching the Godot raid lighting.
-  scene.add(new THREE.AmbientLight(0x44506e, 0.6));
-  const key = new THREE.DirectionalLight(0xfff4e8, 2.2);
+  scene.add(new THREE.AmbientLight(0x44506e, 0.65));
+  const key = new THREE.DirectionalLight(0xfff4e8, 2.4);
   key.position.set(-0.5, 0.8, 0.6);
   scene.add(key);
-  const rim = new THREE.DirectionalLight(0x88aaff, 0.7);
+  const rim = new THREE.DirectionalLight(0x88aaff, 0.8);
   rim.position.set(0.4, -0.3, -0.8);
   scene.add(rim);
 
   loadSky(scene, renderer);
   loadAsteroids(scene);
   loadPlanet(scene);
+
+  // Colored nebula clouds layered over the starfield for the dramatic Godot look.
+  // Caller recenters this on the camera each frame so it reads as "at infinity".
+  const nebula = makeNebula();
+  scene.add(nebula);
+  return { nebula };
+}
+
+// Soft radial-gradient sprite texture (generated, no asset) used for nebula clouds.
+function cloudTexture(): THREE.Texture {
+  const s = 128;
+  const c = document.createElement("canvas");
+  c.width = c.height = s;
+  const ctx = c.getContext("2d")!;
+  const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+  g.addColorStop(0, "rgba(255,255,255,0.85)");
+  g.addColorStop(0.45, "rgba(255,255,255,0.25)");
+  g.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, s, s);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function makeNebula(): THREE.Group {
+  const tex = cloudTexture();
+  const palette = [0x4a1c6e, 0x1c3a7e, 0x14606e, 0x5e1c52, 0x2a1c6e, 0x1c5e5a];
+  const group = new THREE.Group();
+  const radius = 2600;
+  for (let i = 0; i < 9; i++) {
+    const mat = new THREE.SpriteMaterial({
+      map: tex,
+      color: palette[i % palette.length],
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      transparent: true,
+      opacity: 0.38,
+    });
+    const sprite = new THREE.Sprite(mat);
+    sprite.position.copy(new THREE.Vector3().randomDirection().multiplyScalar(radius));
+    const scale = 1500 + Math.random() * 1800;
+    sprite.scale.set(scale, scale, 1);
+    group.add(sprite);
+  }
+  return group;
 }
 
 function loadSky(scene: THREE.Scene, renderer: THREE.WebGLRenderer): void {
