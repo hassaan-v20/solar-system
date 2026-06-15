@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { Input } from "../core/Input";
 import { clamp, moveToward } from "../core/mathf";
 import { ShipConfig, WAYFARER } from "./shipConfig";
+import { Damageable } from "../combat/types";
 
 // Newtonian rigid-body flight, ported from Godot's ship_controller.gd. Thrust and
 // steering are accelerations applied to conserved linear/angular momentum, so the
@@ -10,7 +11,7 @@ import { ShipConfig, WAYFARER } from "./shipConfig";
 //
 // Convention: forward is local -Z, up is +Y (matches three's camera + Godot).
 // `velocity` and `angularVelocity` are world-space, like Godot's body state.
-export class ShipController {
+export class ShipController implements Damageable {
   readonly object = new THREE.Group();
   readonly velocity = new THREE.Vector3();
   readonly angularVelocity = new THREE.Vector3();
@@ -21,6 +22,12 @@ export class ShipController {
   boostLocked = false;
   boostLatched = false; // L3 toggles sustained boost; cleared by L2 or a full drain
   throttle = 0; // forward thrust 0..1 this frame (for engine FX later)
+
+  // Combat: shield-then-hull health; the ship is a Damageable target for enemy bolts.
+  readonly hitRadius = 3;
+  alive = true;
+  hull: number;
+  shield: number;
 
   // scratch vectors reused each frame (no per-frame allocation)
   private readonly _inv = new THREE.Quaternion();
@@ -34,14 +41,37 @@ export class ShipController {
   constructor(public cfg: ShipConfig = WAYFARER) {
     this.flightAssist = cfg.flightAssistDefault;
     this.boostEnergy = cfg.boostCapacity;
+    this.hull = cfg.hullMax;
+    this.shield = cfg.shieldMax;
   }
 
   get speed(): number {
     return this.velocity.length();
   }
 
+  get position(): THREE.Vector3 {
+    return this.object.position;
+  }
+
+  // Damage flows shield-first, then hull (GDD §13). Death zeroes control (see update).
+  applyDamage(amount: number): void {
+    if (amount <= 0 || !this.alive) return;
+    const toShield = Math.min(this.shield, amount);
+    this.shield -= toShield;
+    this.hull = Math.max(0, this.hull - (amount - toShield));
+    if (this.hull <= 0) this.alive = false;
+  }
+
   update(dt: number, input: Input): void {
     this._inv.copy(this.object.quaternion).invert();
+    if (!this.alive) {
+      // Controls are dead after destruction: coast to a stop, bleed off spin.
+      this.moveVecToward(this.velocity, this.cfg.brakeDecel * dt);
+      this.angularVelocity.multiplyScalar(Math.max(0, 1 - 3 * dt));
+      this.applySpin(dt);
+      this.object.position.addScaledVector(this.velocity, dt);
+      return;
+    }
     this.integrateRotation(dt, input);
     this.integrateTranslation(dt, input);
     this.object.position.addScaledVector(this.velocity, dt);
@@ -69,8 +99,11 @@ export class ShipController {
       }
     }
     this.angularVelocity.copy(this._w).applyQuaternion(this.object.quaternion);
+    this.applySpin(dt);
+  }
 
-    // Integrate orientation by the world-space angular velocity.
+  // Integrate orientation by the world-space angular velocity.
+  private applySpin(dt: number): void {
     const angle = this.angularVelocity.length() * dt;
     if (angle > 1e-6) {
       this._axis.copy(this.angularVelocity).normalize();

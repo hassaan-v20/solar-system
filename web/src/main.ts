@@ -4,6 +4,8 @@ import { ChaseCamera } from "./camera/ChaseCamera";
 import { createWorld } from "./world/createWorld";
 import { createShip } from "./ship/createShip";
 import { Hud } from "./ui/Hud";
+import { Combat } from "./combat/Combat";
+import { Director } from "./combat/Director";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
@@ -51,6 +53,8 @@ createWorld(scene, renderer);
 const ship = createShip(scene);
 const chase = new ChaseCamera(camera);
 const hud = new Hud(readout);
+const combat = new Combat(scene, ship);
+const director = new Director(combat, ship);
 
 const input = new Input(renderer.domElement);
 
@@ -66,8 +70,10 @@ function frame(): void {
     clickToFly.classList.add("hidden");
   }
   ship.update(dt, input);
+  combat.update(dt, input.fire());
+  director.update(dt);
   chase.update(dt, ship.object, first);
-  hud.update(ship);
+  hud.update(ship, { drones: combat.drones.length, threat: director.heat, weaponHeat: combat.playerWeapon.heatFrac });
   first = false;
   composer.render();
   requestAnimationFrame(frame);

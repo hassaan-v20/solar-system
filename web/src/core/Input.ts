@@ -21,6 +21,7 @@ export class Input {
   private buttons: number[] = [];
   private assistPrev = false;
   private edgePrev = new Map<number, boolean>();
+  private mouseDown = false;
 
   constructor(canvas: HTMLElement) {
     // Capture the mouse on any click. (The start overlay sits above the canvas and
@@ -38,12 +39,21 @@ export class Input {
         this.mdy += e.movementY;
       }
     });
+    document.addEventListener("mousedown", (e) => {
+      if (e.button === 0) this.mouseDown = true;
+    });
+    document.addEventListener("mouseup", (e) => {
+      if (e.button === 0) this.mouseDown = false;
+    });
     window.addEventListener("keydown", (e) => {
       this.keys.add(e.code);
       if (this.locked && ["Space", "ControlLeft", "Tab"].includes(e.code)) e.preventDefault();
     });
     window.addEventListener("keyup", (e) => this.keys.delete(e.code));
-    window.addEventListener("blur", () => this.keys.clear());
+    window.addEventListener("blur", () => {
+      this.keys.clear();
+      this.mouseDown = false;
+    });
   }
 
   poll(): void {
@@ -86,9 +96,13 @@ export class Input {
     const pad = (this.btn(4) ? 1 : 0) - (this.btn(5) ? 1 : 0); // LB/RB
     return clamp(this.kbAxis("KeyD", "KeyA") + pad, -1, 1);
   }
-  /** Momentary boost: RT or Shift held. (L3 latches boost — see boostTogglePressed.) */
+  /** Fire: left mouse button or right trigger. */
+  fire(): boolean {
+    return this.mouseDown || this.btn(7); // LMB / RT
+  }
+  /** Momentary boost: Shift held. (L3 latches boost — see boostTogglePressed.) */
   boostHeld(): boolean {
-    return this.held("ShiftLeft") || this.held("ShiftRight") || this.btn(7); // RT
+    return this.held("ShiftLeft") || this.held("ShiftRight");
   }
   /** L3 press toggles sustained (latched) boost. */
   boostTogglePressed(): boolean {

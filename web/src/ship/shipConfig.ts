@@ -2,6 +2,8 @@
 // over 1:1. All accelerations are m/s², rates are rad/s. Nothing magic lives in the
 // controller; tune the feel here.
 export interface ShipConfig {
+  hullMax: number;
+  shieldMax: number;
   maxSpeed: number;
   boostSpeed: number;
   acceleration: number;
@@ -24,6 +26,8 @@ export interface ShipConfig {
 }
 
 export const WAYFARER: ShipConfig = {
+  hullMax: 1000,
+  shieldMax: 500,
   maxSpeed: 42,
   boostSpeed: 72,
   acceleration: 32,
