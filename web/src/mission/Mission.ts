@@ -3,13 +3,14 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { ShipController } from "../ship/ShipController";
 import { Combat } from "../combat/Combat";
 import { Director } from "../combat/Director";
+import { Collision } from "../world/Collision";
 
 type State = "approach" | "defend" | "success" | "failed";
 
-// The station is a dock target, not an obstacle — you fly into it to begin. A solid
-// collider (a single sphere can't match this irregular hull) just walled off the
-// approach, so it's intentionally non-solid; asteroids are the things you collide with.
-const DOCK_RADIUS = 320; // dock when you're well inside the massive hull
+// Docking triggers from the station's bounding sphere (computed once the model loads),
+// so you always enter the dock zone before the solid hull blocks you. This constant is
+// only the fallback used until those bounds are known.
+const DOCK_RADIUS = 460;
 const DEFEND_DURATION = 90;
 const STATION_POS = new THREE.Vector3(0, 0, -700);
 const STATION_URL = "/assets/models/station/spacestation_7.glb";
@@ -23,8 +24,9 @@ export class Mission {
   objective = "Fly into the derelict station to begin the raid";
   readonly stationPosition = STATION_POS.clone();
   private left = DEFEND_DURATION;
+  private dockRadius = DOCK_RADIUS; // refined from the model's bounds once it loads
 
-  constructor(scene: THREE.Scene, private ship: ShipController, private combat: Combat, private director: Director) {
+  constructor(scene: THREE.Scene, private ship: ShipController, private combat: Combat, private director: Director, private collision: Collision) {
     this.buildStation(scene);
   }
 
@@ -36,7 +38,7 @@ export class Mission {
   update(dt: number): void {
     switch (this.state) {
       case "approach": {
-        if (this.ship.position.distanceTo(this.stationPosition) < DOCK_RADIUS) this.startDefend();
+        if (this.ship.position.distanceTo(this.stationPosition) < this.dockRadius) this.startDefend();
         break;
       }
       case "defend": {
@@ -97,10 +99,32 @@ export class Mission {
         holder.scale.setScalar(STATION_SIZE / maxDim);
         holder.add(model);
         g.add(holder);
+        this.registerHull(g);
       },
       undefined,
-      () => this.buildFallbackHull(g),
+      () => {
+        this.buildFallbackHull(g);
+        this.registerHull(g);
+      },
     );
+  }
+
+  // Build the solid collider from the station's actual sub-meshes (a world-space box
+  // each), so collision follows the real hull and the gaps stay flyable. Also derive
+  // the dock radius from the overall bounds so docking triggers before the hull blocks.
+  private registerHull(g: THREE.Group): void {
+    g.updateMatrixWorld(true);
+    const whole = new THREE.Box3();
+    g.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || !m.geometry) return;
+      const box = new THREE.Box3().setFromObject(m);
+      this.collision.addBox(box);
+      whole.union(box);
+    });
+    if (!whole.isEmpty()) {
+      this.dockRadius = whole.getBoundingSphere(new THREE.Sphere()).radius + 40;
+    }
   }
 
   private buildFallbackHull(g: THREE.Group): void {
