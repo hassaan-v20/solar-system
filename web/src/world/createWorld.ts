@@ -11,77 +11,54 @@ const ASTEROID_URL = "/assets/models/asteroids/asteroids_andromeda.glb";
 const PLANET_URL = "/assets/models/planets/planet_phoenix_1k.glb";
 const ASTEROID_COUNT = 140;
 
-export function createWorld(scene: THREE.Scene, renderer: THREE.WebGLRenderer): { nebula: THREE.Object3D } {
-  // Warm key + cool ambient/rim, matching the Godot raid lighting.
-  scene.add(new THREE.AmbientLight(0x44506e, 0.65));
-  const key = new THREE.DirectionalLight(0xfff4e8, 2.4);
+export function createWorld(scene: THREE.Scene, renderer: THREE.WebGLRenderer): void {
+  // Layered lighting: a cool hemisphere fill (a gradient, not flat ambient), a warm
+  // key, and a cool rim — plus a synthesized soft IBL environment for ambient +
+  // reflections. The visible Milky Way photo is too dark to light the scene, so we
+  // light it the way Godot's HDR sky did rather than from the background.
+  scene.add(new THREE.HemisphereLight(0x6b82a8, 0x10131c, 0.55));
+  const key = new THREE.DirectionalLight(0xfff2e0, 2.0);
   key.position.set(-0.5, 0.8, 0.6);
   scene.add(key);
-  const rim = new THREE.DirectionalLight(0x88aaff, 0.8);
+  const rim = new THREE.DirectionalLight(0x88aaff, 0.6);
   rim.position.set(0.4, -0.3, -0.8);
   scene.add(rim);
 
-  loadSky(scene, renderer);
+  makeEnvironment(scene, renderer);
+  loadSky(scene);
   loadAsteroids(scene);
   loadPlanet(scene);
-
-  // Colored nebula clouds layered over the starfield for the dramatic Godot look.
-  // Caller recenters this on the camera each frame so it reads as "at infinity".
-  const nebula = makeNebula();
-  scene.add(nebula);
-  return { nebula };
 }
 
-// Soft radial-gradient sprite texture (generated, no asset) used for nebula clouds.
-function cloudTexture(): THREE.Texture {
-  const s = 128;
+// A soft cool gradient used only as the IBL environment (not visible) so PBR
+// materials get realistic ambient + subtle reflections. Built in code, no asset.
+function makeEnvironment(scene: THREE.Scene, renderer: THREE.WebGLRenderer): void {
+  const w = 512;
+  const h = 256;
   const c = document.createElement("canvas");
-  c.width = c.height = s;
+  c.width = w;
+  c.height = h;
   const ctx = c.getContext("2d")!;
-  const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
-  g.addColorStop(0, "rgba(255,255,255,0.85)");
-  g.addColorStop(0.45, "rgba(255,255,255,0.25)");
-  g.addColorStop(1, "rgba(255,255,255,0)");
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0.0, "#0a0e18"); // zenith — dark
+  g.addColorStop(0.5, "#243352"); // horizon — cool fill
+  g.addColorStop(1.0, "#0b0c12"); // nadir — dark
   ctx.fillStyle = g;
-  ctx.fillRect(0, 0, s, s);
+  ctx.fillRect(0, 0, w, h);
   const tex = new THREE.CanvasTexture(c);
+  tex.mapping = THREE.EquirectangularReflectionMapping;
   tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromEquirectangular(tex).texture;
+  pmrem.dispose();
+  tex.dispose();
 }
 
-function makeNebula(): THREE.Group {
-  const tex = cloudTexture();
-  const palette = [0x4a1c6e, 0x1c3a7e, 0x14606e, 0x5e1c52, 0x2a1c6e, 0x1c5e5a];
-  const group = new THREE.Group();
-  const radius = 2600;
-  for (let i = 0; i < 9; i++) {
-    const mat = new THREE.SpriteMaterial({
-      map: tex,
-      color: palette[i % palette.length],
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      transparent: true,
-      opacity: 0.38,
-    });
-    const sprite = new THREE.Sprite(mat);
-    sprite.position.copy(new THREE.Vector3().randomDirection().multiplyScalar(radius));
-    const scale = 1500 + Math.random() * 1800;
-    sprite.scale.set(scale, scale, 1);
-    group.add(sprite);
-  }
-  return group;
-}
-
-function loadSky(scene: THREE.Scene, renderer: THREE.WebGLRenderer): void {
+function loadSky(scene: THREE.Scene): void {
   new THREE.TextureLoader().load(PANORAMA_URL, (tex) => {
     tex.mapping = THREE.EquirectangularReflectionMapping;
     tex.colorSpace = THREE.SRGBColorSpace;
-    scene.background = tex;
-    // Prefilter once into an environment map so the metallic hull picks up subtle
-    // reflections from the starfield.
-    const pmrem = new THREE.PMREMGenerator(renderer);
-    scene.environment = pmrem.fromEquirectangular(tex).texture;
-    pmrem.dispose();
+    scene.background = tex; // visible background only; lighting comes from makeEnvironment
   });
 }
 

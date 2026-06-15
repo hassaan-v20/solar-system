@@ -38,7 +38,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.2; // a touch punchier, like the Godot grade
+renderer.toneMappingExposure = 1.05;
 app.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -46,16 +46,22 @@ scene.background = new THREE.Color(0x05070d);
 
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 6000);
 
-// Post-processing: soft/wide bloom (engine glow + bright stars/nebula), tonemap +
-// sRGB output, then a contrast/saturation grade — porting the Godot glow + grade.
-const composer = new EffectComposer(renderer);
+// Post-processing in an MSAA + HDR (half-float) target so edges are smooth through
+// the chain (plain antialias:true is bypassed once we render to a target) and bloom
+// has the precision to avoid banding. Subtle bloom, then tonemap + sRGB, then a gentle
+// contrast/saturation grade (matching Godot's mild adjustment).
+const renderTarget = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight, {
+  type: THREE.HalfFloatType,
+  samples: 4,
+});
+const composer = new EffectComposer(renderer, renderTarget);
 composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.85, 0.8, 0.78);
+const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.5, 0.6, 0.85);
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
 composer.addPass(
   new ShaderPass({
-    uniforms: { tDiffuse: { value: null }, contrast: { value: 1.06 }, saturation: { value: 1.22 } },
+    uniforms: { tDiffuse: { value: null }, contrast: { value: 1.05 }, saturation: { value: 1.15 } },
     vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
     fragmentShader: `
       uniform sampler2D tDiffuse; uniform float contrast; uniform float saturation; varying vec2 vUv;
@@ -69,7 +75,7 @@ composer.addPass(
   }),
 );
 
-const world = createWorld(scene, renderer);
+createWorld(scene, renderer);
 const ship = createShip(scene);
 const chase = new ChaseCamera(camera);
 const hud = new Hud(readout, objectiveEl);
@@ -91,7 +97,6 @@ function frame(): void {
     started = true; // dismiss the start overlay on first mouse-capture or gamepad input
     clickToFly.classList.add("hidden");
   }
-  world.nebula.position.copy(camera.position); // keep the nebula "at infinity" (no parallax)
   ship.update(dt, input);
   combat.update(dt, input.fire());
   director.update(dt);
