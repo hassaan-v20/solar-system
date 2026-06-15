@@ -1,13 +1,16 @@
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { ShipController } from "../ship/ShipController";
 import { Combat } from "../combat/Combat";
 import { Director } from "../combat/Director";
 
 type State = "approach" | "defend" | "success" | "failed";
 
-const DOCK_RADIUS = 130;
+const DOCK_RADIUS = 150;
 const DEFEND_DURATION = 90;
 const STATION_POS = new THREE.Vector3(0, 0, -520);
+const STATION_URL = "/assets/models/station/spacestation_7.glb";
+const STATION_SIZE = 280; // longest-axis target in world units
 
 // Single-player Ghost Station defend, ported from the Godot CoopRaid flow: fly into
 // the derelict station to begin, then hold for DEFEND_DURATION while drone waves
@@ -60,18 +63,49 @@ export class Mission {
     if (state === "success") this.combat.clearDrones();
   }
 
-  // A derelict station built from primitives (the real GLB is 33 MB — too heavy for
-  // the web): dark hull cluster, a glowing data core that blooms, and a red beacon.
+  // The real derelict station GLB, with a glowing core + red beacon as accents so
+  // it's findable from afar. Falls back to a primitive hull if the model is missing.
   private buildStation(scene: THREE.Scene): void {
     const g = new THREE.Group();
-    const hull = new THREE.MeshStandardMaterial({ color: 0x39414e, metalness: 0.7, roughness: 0.55 });
+    g.position.copy(STATION_POS);
+    scene.add(g);
 
+    // Findable accents, shown immediately while the (large) model streams in.
+    const core = new THREE.Mesh(new THREE.IcosahedronGeometry(9, 1), new THREE.MeshBasicMaterial({ color: 0x66e0ff }));
+    g.add(core);
+    g.add(new THREE.PointLight(0x66e0ff, 6, 260));
+    const beacon = new THREE.Mesh(new THREE.SphereGeometry(3, 8, 8), new THREE.MeshBasicMaterial({ color: 0xff3a2a }));
+    beacon.position.set(0, 48, 0);
+    g.add(beacon);
+    const beaconLight = new THREE.PointLight(0xff3a2a, 4, 320);
+    beaconLight.position.set(0, 48, 0);
+    g.add(beaconLight);
+
+    new GLTFLoader().load(
+      STATION_URL,
+      (gltf) => {
+        const model = gltf.scene;
+        const box = new THREE.Box3().setFromObject(model);
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+        const maxDim = Math.max(size.x, size.y, size.z) || 1;
+        model.position.sub(center);
+        const holder = new THREE.Group();
+        holder.scale.setScalar(STATION_SIZE / maxDim);
+        holder.add(model);
+        g.add(holder);
+      },
+      undefined,
+      () => this.buildFallbackHull(g),
+    );
+  }
+
+  private buildFallbackHull(g: THREE.Group): void {
+    const hull = new THREE.MeshStandardMaterial({ color: 0x39414e, metalness: 0.7, roughness: 0.55 });
     const spine = new THREE.Mesh(new THREE.CylinderGeometry(13, 13, 130, 12), hull);
     spine.rotation.z = Math.PI / 2;
     g.add(spine);
     g.add(new THREE.Mesh(new THREE.IcosahedronGeometry(34, 1), hull));
-
-    // A few modules clustered around the hub.
     for (let i = 0; i < 6; i++) {
       const m = new THREE.Mesh(new THREE.BoxGeometry(16 + Math.random() * 18, 14, 16), hull);
       const ang = (i / 6) * Math.PI * 2;
@@ -79,21 +113,5 @@ export class Mission {
       m.rotation.y = ang;
       g.add(m);
     }
-
-    // Glowing data core (unlit → blooms) + its light.
-    const core = new THREE.Mesh(new THREE.IcosahedronGeometry(9, 1), new THREE.MeshBasicMaterial({ color: 0x66e0ff }));
-    g.add(core);
-    g.add(new THREE.PointLight(0x66e0ff, 6, 240));
-
-    // Red running beacon so the derelict is findable in the dark.
-    const beacon = new THREE.Mesh(new THREE.SphereGeometry(3, 8, 8), new THREE.MeshBasicMaterial({ color: 0xff3a2a }));
-    beacon.position.set(0, 42, 0);
-    g.add(beacon);
-    const beaconLight = new THREE.PointLight(0xff3a2a, 4, 300);
-    beaconLight.position.set(0, 42, 0);
-    g.add(beaconLight);
-
-    g.position.copy(STATION_POS);
-    scene.add(g);
   }
 }

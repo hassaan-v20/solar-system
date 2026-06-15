@@ -50,6 +50,7 @@ export class HudOverlay {
 
   draw(ship: ShipController, combat: Combat): void {
     this.ctx.clearRect(0, 0, this.w, this.h);
+    this.drawCrosshair();
     this.drawMarkers(ship, combat);
     this.drawDroneBars(combat);
     this.drawEnemyIndicators(combat);
@@ -64,12 +65,26 @@ export class HudOverlay {
     return { x: (ndc.x * 0.5 + 0.5) * this.w, y: (-ndc.y * 0.5 + 0.5) * this.h, behind: cs.z >= 0 };
   }
 
+  // Fixed reticle at screen center — your bolts fire along the nose, which sits at
+  // center in the chase cam; projecting the nose point instead made it swim.
+  private drawCrosshair(): void {
+    const ctx = this.ctx;
+    const x = this.w / 2;
+    const y = this.h / 2;
+    ctx.strokeStyle = "rgba(255,255,255,0.8)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(x, y, 6, 0, Math.PI * 2);
+    ctx.moveTo(x - 2, y);
+    ctx.lineTo(x + 2, y);
+    ctx.moveTo(x, y - 2);
+    ctx.lineTo(x, y + 2);
+    ctx.stroke();
+  }
+
   // ── flight markers ──────────────────────────────────────────────────────────────
   private drawMarkers(ship: ShipController, combat: Combat): void {
     const origin = ship.position;
-    this._fwd.set(0, 0, -1).applyQuaternion(ship.object.quaternion);
-    this.marker(this._v.copy(origin).addScaledVector(this._fwd, 250), "cross", "#ffffff");
-
     const v = ship.velocity;
     if (v.length() > 1.5) {
       const vn = v.clone().normalize();
