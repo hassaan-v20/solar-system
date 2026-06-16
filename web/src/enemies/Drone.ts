@@ -8,6 +8,7 @@ import { interceptTime } from "../combat/ballistics";
 
 const FORWARD = new THREE.Vector3(0, 0, -1);
 const UP = new THREE.Vector3(0, 1, 0);
+const X_AXIS = new THREE.Vector3(1, 0, 0);
 
 // What a drone needs from Combat to shoot (kept as an interface to avoid a circular
 // import; Combat satisfies it structurally).
@@ -25,6 +26,18 @@ export class Drone implements Damageable {
   alive = true;
   readonly hitRadius = 2.5;
   private weapon: Weapon;
+
+  // scratch vectors — reused every frame, no per-frame heap allocation
+  private readonly _toTarget = new THREE.Vector3();
+  private readonly _dir = new THREE.Vector3();
+  private readonly _aim = new THREE.Vector3();
+  private readonly _wantQ = new THREE.Quaternion();
+  private readonly _radial = new THREE.Vector3();
+  private readonly _tangent = new THREE.Vector3();
+  private readonly _desired = new THREE.Vector3();
+  private readonly _fwd = new THREE.Vector3();
+  private readonly _vrel = new THREE.Vector3();
+  private readonly _d = new THREE.Vector3();
 
   constructor(private scene: THREE.Scene, private def: EnemyDef, proto: THREE.Object3D | null) {
     this.hull = def.hullMax;
@@ -62,29 +75,29 @@ export class Drone implements Damageable {
 
   update(dt: number, target: Damageable, sink: BoltSink): void {
     this.weapon.tick(dt);
-    const toTarget = new THREE.Vector3().subVectors(target.position, this.object.position);
-    const dist = toTarget.length();
+    this._toTarget.subVectors(target.position, this.object.position);
+    const dist = this._toTarget.length();
     if (dist < 0.01) return;
-    const dir = toTarget.clone().divideScalar(dist);
-    const aim = this.leadDirection(toTarget, target.velocity);
+    this._dir.copy(this._toTarget).divideScalar(dist);
+    this.leadDirection(this._toTarget, target.velocity, this._aim);
 
     // Slew to face the lead point.
-    const want = new THREE.Quaternion().setFromUnitVectors(FORWARD, aim);
-    this.object.quaternion.slerp(want, clamp(this.def.turnSpeed * dt, 0, 1));
+    this._wantQ.setFromUnitVectors(FORWARD, this._aim);
+    this.object.quaternion.slerp(this._wantQ, clamp(this.def.turnSpeed * dt, 0, 1));
 
     // Station-keeping: close/hold the preferred range while orbiting (moving target).
     const rangeErr = dist - this.def.preferredRange;
-    const radial = dir.clone().multiplyScalar(clamp(rangeErr / 20, -1, 1));
-    const tangent = new THREE.Vector3().crossVectors(dir, UP);
-    if (tangent.length() < 0.01) tangent.crossVectors(dir, new THREE.Vector3(1, 0, 0));
-    tangent.normalize();
-    const desired = radial.add(tangent.multiplyScalar(0.6)).clampLength(0, 1).multiplyScalar(this.def.moveSpeed);
-    this.moveVelToward(desired, this.def.accel * dt);
+    this._radial.copy(this._dir).multiplyScalar(clamp(rangeErr / 20, -1, 1));
+    this._tangent.crossVectors(this._dir, UP);
+    if (this._tangent.length() < 0.01) this._tangent.crossVectors(this._dir, X_AXIS);
+    this._tangent.normalize();
+    this._desired.copy(this._radial).addScaledVector(this._tangent, 0.6).clampLength(0, 1).multiplyScalar(this.def.moveSpeed);
+    this.moveVelToward(this._desired, this.def.accel * dt);
     this.object.position.addScaledVector(this.velocity, dt);
 
     // Fire only when actually lined up on the lead point and in range.
-    const fwd = FORWARD.clone().applyQuaternion(this.object.quaternion);
-    if (dist <= this.def.preferredRange * 1.8 && fwd.dot(aim) > 0.985 && this.weapon.ready) {
+    this._fwd.copy(FORWARD).applyQuaternion(this.object.quaternion);
+    if (dist <= this.def.preferredRange * 1.8 && this._fwd.dot(this._aim) > 0.985 && this.weapon.ready) {
       sink.fireFrom(this.object, "enemy", this.weapon.def, this.velocity);
       this.weapon.fired();
     }
@@ -92,20 +105,21 @@ export class Drone implements Damageable {
 
   // Where to point so a bolt (muzzle speed + our own velocity) intercepts the moving
   // target; falls back to aiming straight at it when there's no solution.
-  private leadDirection(toTarget: THREE.Vector3, targetVel: THREE.Vector3): THREE.Vector3 {
+  private leadDirection(toTarget: THREE.Vector3, targetVel: THREE.Vector3, out: THREE.Vector3): void {
     const bs = Math.max(1, this.def.projectileSpeed);
-    const vrel = targetVel.clone().sub(this.velocity);
-    const t = interceptTime(toTarget, vrel, bs);
-    if (t <= 0) return toTarget.clone().normalize();
-    const lead = toTarget.clone().add(vrel.multiplyScalar(t)).divideScalar(bs * t);
-    return lead.length() > 0.001 ? lead.normalize() : toTarget.clone().normalize();
+    this._vrel.copy(targetVel).sub(this.velocity);
+    const t = interceptTime(toTarget, this._vrel, bs);
+    if (t <= 0) { out.copy(toTarget).normalize(); return; }
+    out.copy(toTarget).addScaledVector(this._vrel, t);
+    const len = out.length();
+    if (len > 0.001) out.divideScalar(len); else out.copy(toTarget).normalize();
   }
 
   private moveVelToward(target: THREE.Vector3, maxDelta: number): void {
-    const d = new THREE.Vector3().subVectors(target, this.velocity);
-    const len = d.length();
+    this._d.subVectors(target, this.velocity);
+    const len = this._d.length();
     if (len <= maxDelta || len === 0) this.velocity.copy(target);
-    else this.velocity.addScaledVector(d.divideScalar(len), maxDelta);
+    else this.velocity.addScaledVector(this._d.divideScalar(len), maxDelta);
   }
 
   private buildModel(proto: THREE.Object3D | null): void {

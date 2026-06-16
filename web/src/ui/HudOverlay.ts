@@ -3,6 +3,7 @@ import { ShipController } from "../ship/ShipController";
 import { Combat } from "../combat/Combat";
 import { Drone } from "../enemies/Drone";
 import { interceptTime } from "../combat/ballistics";
+import { settings } from "../core/Settings";
 
 export interface Waypoint {
   position: THREE.Vector3;
@@ -50,12 +51,12 @@ export class HudOverlay {
 
   draw(ship: ShipController, combat: Combat): void {
     this.ctx.clearRect(0, 0, this.w, this.h);
-    this.drawCrosshair();
-    this.drawMarkers(ship, combat);
-    this.drawDroneBars(combat);
-    this.drawEnemyIndicators(combat);
+    if (settings.showCrosshair) this.drawCrosshair();
+    if (settings.showMarkers) this.drawMarkers(ship, combat);
+    if (settings.showDroneBars) this.drawDroneBars(combat);
+    if (settings.showEnemyIndicators) this.drawEnemyIndicators(combat);
     if (this.waypoint) this.drawWaypoint(this.waypoint);
-    this.drawPlayerBars(ship);
+    if (settings.showPlayerBars) this.drawPlayerBars(ship);
   }
 
   // ── projection: world → screen pixels (+ whether it's behind the camera) ────────

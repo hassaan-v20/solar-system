@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { Input } from "../core/Input";
 import { clamp, moveToward } from "../core/mathf";
+import { settings } from "../core/Settings";
 import { ShipConfig, WAYFARER } from "./shipConfig";
 import { Damageable } from "../combat/types";
 
@@ -11,6 +12,9 @@ import { Damageable } from "../combat/types";
 //
 // Convention: forward is local -Z, up is +Y (matches three's camera + Godot).
 // `velocity` and `angularVelocity` are world-space, like Godot's body state.
+// Toggle to true during testing to disable boost drain and lock-out.
+export const DEV_INFINITE_BOOST = true;
+
 export class ShipController implements Damageable {
   readonly object = new THREE.Group();
   readonly velocity = new THREE.Vector3();
@@ -84,8 +88,8 @@ export class ShipController implements Damageable {
     const roll = input.roll();
     // Mouse + right-stick + roll feed a commanded turn RATE (steering has inertia).
     this._cmd.set(
-      clamp(-dy * c.mouseSens + aim.y * c.turnRate, -c.turnRate, c.turnRate), // pitch (local x)
-      clamp(-dx * c.mouseSens - aim.x * c.turnRate, -c.turnRate, c.turnRate), // yaw   (local y)
+      clamp(-dy * settings.mouseSensitivity + aim.y * c.turnRate, -c.turnRate, c.turnRate), // pitch (local x)
+      clamp(-dx * settings.mouseSensitivity - aim.x * c.turnRate, -c.turnRate, c.turnRate), // yaw   (local y)
       clamp(roll * c.rollRate, -c.rollRate, c.rollRate), // roll  (local z)
     );
 
@@ -172,6 +176,12 @@ export class ShipController implements Damageable {
   // Finite boost reserve: drains while held, refills when idle, locks out on empty
   // until it recovers past boostRelockFrac (no stutter-boosting at zero).
   private updateBoost(dt: number, want: boolean): void {
+    if (DEV_INFINITE_BOOST) {
+      this.isBoosting = want;
+      this.boostEnergy = this.cfg.boostCapacity;
+      this.boostLocked = false;
+      return;
+    }
     const c = this.cfg;
     if (want && !this.boostLocked && this.boostEnergy > 0) {
       this.isBoosting = true;

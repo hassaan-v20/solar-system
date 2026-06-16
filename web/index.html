@@ -35,6 +35,74 @@
         font-size: 18px; line-height: 1; backdrop-filter: blur(2px);
       }
       #fullscreen-btn:hover { background: rgba(30, 44, 66, 0.75); color: #fff; }
+
+      #pause-menu {
+        position: fixed; inset: 0; display: none; z-index: 100;
+        background: rgba(0,0,0,0.7); backdrop-filter: blur(6px);
+        justify-content: center; align-items: center;
+        font: 15px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+        color: #cfe6ff; letter-spacing: 0.4px;
+      }
+      #pause-menu.open { display: flex; }
+
+      #pause-menu .panel {
+        background: rgba(10, 16, 32, 0.85);
+        border: 1px solid rgba(120, 160, 200, 0.3);
+        border-radius: 12px;
+        padding: 36px 44px 30px;
+        display: flex; flex-direction: column; gap: 22px;
+        min-width: 340px; max-width: 440px;
+      }
+      #pause-menu h2 {
+        margin: 0 0 6px; font-size: 22px; font-weight: 500;
+        text-align: center; color: #dcefff; letter-spacing: 1.2px;
+      }
+      #pause-menu .row {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 16px;
+      }
+      #pause-menu label {
+        user-select: none; cursor: pointer;
+      }
+      #pause-menu input[type="range"] {
+        width: 140px; accent-color: #5aa8ff; cursor: pointer;
+      }
+      #pause-menu input[type="range"]:hover { accent-color: #7abfff; }
+      #pause-menu .sens-val {
+        min-width: 32px; text-align: right; font-variant-numeric: tabular-nums;
+      }
+      #pause-menu .toggle {
+        width: 40px; height: 22px; border-radius: 11px;
+        border: 1px solid rgba(120, 160, 200, 0.45);
+        background: rgba(40, 50, 70, 0.6); cursor: pointer;
+        position: relative; transition: background 0.15s;
+        flex-shrink: 0;
+      }
+      #pause-menu .toggle.on {
+        background: #3a6088; border-color: #5aa8ff;
+      }
+      #pause-menu .toggle .knob {
+        position: absolute; top: 2px; left: 2px;
+        width: 16px; height: 16px; border-radius: 50%;
+        background: #cfe6ff; transition: left 0.15s;
+      }
+      #pause-menu .toggle.on .knob { left: 20px; }
+      #pause-menu .divider {
+        height: 1px; background: rgba(120, 160, 200, 0.15);
+        margin: 4px 0;
+      }
+      #pause-menu .section-title {
+        font-size: 12px; text-transform: uppercase; letter-spacing: 1.2px;
+        color: rgba(180, 200, 220, 0.7); margin: 0;
+      }
+      #pause-menu button {
+        border: 1px solid rgba(120, 160, 200, 0.4);
+        background: rgba(30, 60, 100, 0.5); color: #dcefff;
+        padding: 10px 0; border-radius: 8px; cursor: pointer;
+        font: inherit; font-size: 16px; letter-spacing: 0.8px;
+        transition: background 0.15s;
+      }
+      #pause-menu button:hover { background: rgba(50, 90, 140, 0.7); color: #fff; }
     </style>
   </head>
   <body>
@@ -50,10 +118,29 @@
         <small>
           W/S thrust &nbsp;·&nbsp; mouse aim &nbsp;·&nbsp; LMB fire &nbsp;·&nbsp; A/D roll &nbsp;·&nbsp; Q/E strafe
           &nbsp;·&nbsp; Space/C up·down &nbsp;·&nbsp; Shift boost &nbsp;·&nbsp; Ctrl brake &nbsp;·&nbsp; Z flight-assist
-          <br />Esc releases the mouse
+          <br />Esc — pause / settings
           <br /><br />Controller: left stick move · right stick aim · RT fire · L3 toggle-boost · LB/RB roll · L2 brake · ▲ flight-assist
           <br />(plug in a gamepad and press any button to start)
         </small>
+      </div>
+    </div>
+    <div id="pause-menu">
+      <div class="panel">
+        <h2>PAUSED</h2>
+        <div class="section-title">Controls</div>
+        <div class="row">
+          <label for="sens-slider">Mouse Sensitivity</label>
+          <input type="range" id="sens-slider" min="0.01" max="0.5" step="0.005" />
+          <span class="sens-val" id="sens-val"></span>
+        </div>
+        <div class="divider"></div>
+        <div class="section-title">HUD Indicators</div>
+        <div class="row"><span>Crosshair</span><div class="toggle on" id="tog-crosshair"><div class="knob"></div></div></div>
+        <div class="row"><span>Prograde / Retrograde / Lead</span><div class="toggle on" id="tog-markers"><div class="knob"></div></div></div>
+        <div class="row"><span>Drone Health Bars</span><div class="toggle on" id="tog-dronebars"><div class="knob"></div></div></div>
+        <div class="row"><span>Enemy Arrows &amp; Reticles</span><div class="toggle on" id="tog-enemyind"><div class="knob"></div></div></div>
+        <div class="row"><span>Shield / Hull / Boost Bars</span><div class="toggle on" id="tog-playerbars"><div class="knob"></div></div></div>
+        <button id="resume-btn">RESUME</button>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

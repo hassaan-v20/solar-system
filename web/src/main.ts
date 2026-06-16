@@ -9,6 +9,8 @@ import { HudOverlay } from "./ui/HudOverlay";
 import { Combat } from "./combat/Combat";
 import { Director } from "./combat/Director";
 import { Mission } from "./mission/Mission";
+import { settings, commitSettings } from "./core/Settings";
+import { ThrusterFX } from "./ship/ThrusterFX";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
@@ -32,7 +34,70 @@ fullscreenBtn.addEventListener("click", (e) => {
 });
 window.addEventListener("keydown", (e) => {
   if (e.code === "KeyF") toggleFullscreen();
+  if (e.code === "Escape" && paused) {
+    closePauseMenu();
+    renderer.domElement.requestPointerLock();
+  }
 });
+
+const pauseMenu = document.getElementById("pause-menu")!;
+const resumeBtn = document.getElementById("resume-btn")!;
+const sensSlider = document.getElementById("sens-slider") as HTMLInputElement;
+const sensVal = document.getElementById("sens-val")!;
+
+type ToggleEl = HTMLElement & { _key: keyof typeof settings };
+const toggles: Record<string, ToggleEl> = {
+  "tog-crosshair": document.getElementById("tog-crosshair") as ToggleEl,
+  "tog-markers": document.getElementById("tog-markers") as ToggleEl,
+  "tog-dronebars": document.getElementById("tog-dronebars") as ToggleEl,
+  "tog-enemyind": document.getElementById("tog-enemyind") as ToggleEl,
+  "tog-playerbars": document.getElementById("tog-playerbars") as ToggleEl,
+};
+const toggleKeys: [ToggleEl, keyof typeof settings][] = [
+  [toggles["tog-crosshair"], "showCrosshair"],
+  [toggles["tog-markers"], "showMarkers"],
+  [toggles["tog-dronebars"], "showDroneBars"],
+  [toggles["tog-enemyind"], "showEnemyIndicators"],
+  [toggles["tog-playerbars"], "showPlayerBars"],
+];
+
+let paused = false;
+
+function openPauseMenu(): void {
+  paused = true;
+  pauseMenu.classList.add("open");
+  sensSlider.value = String(settings.mouseSensitivity);
+  sensVal.textContent = settings.mouseSensitivity.toFixed(3);
+  for (const [el, key] of toggleKeys) {
+    el.classList.toggle("on", settings[key] as boolean);
+  }
+}
+
+function closePauseMenu(): void {
+  paused = false;
+  pauseMenu.classList.remove("open");
+}
+
+resumeBtn.addEventListener("click", () => {
+  closePauseMenu();
+  renderer.domElement.requestPointerLock();
+});
+
+sensSlider.addEventListener("input", () => {
+  const v = parseFloat(sensSlider.value);
+  settings.mouseSensitivity = v;
+  sensVal.textContent = v.toFixed(3);
+  commitSettings();
+});
+
+for (const [el, key] of toggleKeys) {
+  el.addEventListener("click", () => {
+    const v = !settings[key];
+    (settings as unknown as Record<string, boolean>)[key] = v;
+    el.classList.toggle("on", v);
+    commitSettings();
+  });
+}
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -86,11 +151,20 @@ const combat = new Combat(scene, ship);
 const director = new Director(combat, ship);
 const mission = new Mission(scene, ship, combat, director, collision);
 
+const thrusterFX = new ThrusterFX(ship);
 const input = new Input(renderer.domElement);
 
 let first = true;
 let started = false;
 const clock = new THREE.Clock();
+
+document.addEventListener("pointerlockchange", () => {
+  if (!document.pointerLockElement && started && !paused) {
+    openPauseMenu();
+  } else if (document.pointerLockElement && paused) {
+    closePauseMenu();
+  }
+});
 
 function frame(): void {
   const dt = Math.min(clock.getDelta(), 1 / 30); // clamp so a stutter can't fling the ship
@@ -99,11 +173,14 @@ function frame(): void {
     started = true; // dismiss the start overlay on first mouse-capture or gamepad input
     clickToFly.classList.add("hidden");
   }
-  ship.update(dt, input);
-  collision.resolveShip(ship); // push the ship out of asteroids / the station hull
-  combat.update(dt, input.fire());
-  director.update(dt);
-  mission.update(dt);
+  if (!paused) {
+    ship.update(dt, input);
+    collision.resolveShip(ship); // push the ship out of asteroids / the station hull
+    combat.update(dt, input.fire());
+    director.update(dt);
+    mission.update(dt);
+  }
+  thrusterFX.update(dt);
   chase.update(dt, ship.object, first);
   hud.update(ship, {
     drones: combat.drones.length,

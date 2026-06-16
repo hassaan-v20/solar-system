@@ -8,27 +8,34 @@ interface Sphere {
 
 const BOUNCE = 1.15; // >1 = cancel inward velocity + a little push-back
 
-// Sphere + AABB collision against the ship (a small sphere). Asteroids are spheres;
-// the station registers a box per hull sub-mesh so collision follows the real shape.
-// On overlap the ship is pushed to the surface and its inward velocity cancelled, so
-// it stops/slides instead of phasing through — keeps the custom Newtonian integrator.
+// Sphere + mesh-raycast collision against the ship.
+// Asteroids use sphere colliders (fast, accurate for rocks).
+// The station uses a THREE.Raycaster against its actual triangles — no AABB
+// over-coverage, no invisible walls from rotated geometry.
 export class Collision {
   private spheres: Sphere[] = [];
-  private boxes: THREE.Box3[] = [];
-  private _n = new THREE.Vector3();
+  private stationMeshes: THREE.Mesh[] = [];
+  private readonly raycaster = new THREE.Raycaster();
+  private readonly _prevPos = new THREE.Vector3();
+  private prevPosReady = false;
+  private readonly _n = new THREE.Vector3();
 
   add(position: THREE.Vector3, radius: number): void {
     this.spheres.push({ position, radius });
   }
 
-  addBox(box: THREE.Box3): void {
-    this.boxes.push(box);
+  /** Register the station's actual meshes for triangle-accurate collision. */
+  setStationMeshes(meshes: THREE.Mesh[]): void {
+    this.stationMeshes = meshes;
   }
 
   resolveShip(ship: ShipController): void {
     const r = ship.hitRadius;
     for (const c of this.spheres) this.resolveSphere(ship, c, r);
-    for (const b of this.boxes) this.resolveBox(ship, b, r);
+    this.resolveStation(ship);
+    // Save the post-correction position for next frame's ray origin.
+    this._prevPos.copy(ship.position);
+    this.prevPosReady = true;
   }
 
   private resolveSphere(ship: ShipController, c: Sphere, shipR: number): void {
@@ -40,33 +47,52 @@ export class Collision {
     this.pushOut(ship, n, min - dist);
   }
 
-  private resolveBox(ship: ShipController, box: THREE.Box3, shipR: number): void {
-    const p = ship.position;
-    // Closest point on the box to the ship center.
-    const cx = Math.max(box.min.x, Math.min(p.x, box.max.x));
-    const cy = Math.max(box.min.y, Math.min(p.y, box.max.y));
-    const cz = Math.max(box.min.z, Math.min(p.z, box.max.z));
-    const dx = p.x - cx;
-    const dy = p.y - cy;
-    const dz = p.z - cz;
-    const d2 = dx * dx + dy * dy + dz * dz;
+  // Ray from last-good position toward current position.  Any mesh triangle hit
+  // closer than (moveDist + hitRadius) means the sphere would have touched it, so
+  // push the ship back to the surface.  Face normals are transformed to world space.
+  private resolveStation(ship: ShipController): void {
+    if (this.stationMeshes.length === 0) return;
 
-    if (d2 > shipR * shipR) return;
-
-    if (d2 > 1e-8) {
-      // Outside the box, within shipR of the surface — push out along the contact normal.
-      const d = Math.sqrt(d2);
-      this.pushOut(ship, this._n.set(dx / d, dy / d, dz / d), shipR - d);
-    } else {
-      // Center inside the box — push out along the least-penetration axis.
-      const px = Math.min(p.x - box.min.x, box.max.x - p.x);
-      const py = Math.min(p.y - box.min.y, box.max.y - p.y);
-      const pz = Math.min(p.z - box.min.z, box.max.z - p.z);
-      if (px <= py && px <= pz) this._n.set(p.x - box.min.x < box.max.x - p.x ? -1 : 1, 0, 0);
-      else if (py <= pz) this._n.set(0, p.y - box.min.y < box.max.y - p.y ? -1 : 1, 0);
-      else this._n.set(0, 0, p.z - box.min.z < box.max.z - p.z ? -1 : 1);
-      this.pushOut(ship, this._n, Math.min(px, py, pz) + shipR);
+    // On the first frame, we have no previous position yet — just record it.
+    if (!this.prevPosReady) {
+      this._prevPos.copy(ship.position);
+      return;
     }
+
+    const curr = ship.position;
+    const dir = this._n.subVectors(curr, this._prevPos);
+    const moveDist = dir.length();
+
+    // No movement: still check if we're already inside something by casting
+    // a tiny ray forward to catch the "pushed into a wall" case.
+    const checkDist = moveDist < 1e-4 ? 0.1 : moveDist;
+    if (moveDist > 1e-4) dir.divideScalar(moveDist);
+    else dir.set(0, 0, -1);
+
+    this.raycaster.set(this._prevPos, dir);
+    // We care about hits closer than (moveDist + hitRadius): the sphere's leading
+    // edge reaches the surface that far ahead of its centre along the travel path.
+    this.raycaster.far = checkDist + ship.hitRadius + 1.0;
+    this.raycaster.near = 0;
+
+    const hits = this.raycaster.intersectObjects(this.stationMeshes, false);
+    if (hits.length === 0) return;
+
+    const hit = hits[0];
+    // Only respond if the centre path + sphere radius reaches the surface.
+    if (hit.distance > moveDist + ship.hitRadius) return;
+    if (!hit.face) return;
+
+    // Transform the face normal from object space to world space.
+    const normal = hit.face.normal
+      .clone()
+      .transformDirection(hit.object.matrixWorld)
+      .normalize();
+
+    // Position the ship so its surface just touches the hit point.
+    ship.position.copy(hit.point).addScaledVector(normal, ship.hitRadius);
+    const vn = ship.velocity.dot(normal);
+    if (vn < 0) ship.velocity.addScaledVector(normal, -vn * BOUNCE);
   }
 
   private pushOut(ship: ShipController, n: THREE.Vector3, depth: number): void {

@@ -109,19 +109,21 @@ export class Mission {
     );
   }
 
-  // Build the solid collider from the station's actual sub-meshes (a world-space box
-  // each), so collision follows the real hull and the gaps stay flyable. Also derive
-  // the dock radius from the overall bounds so docking triggers before the hull blocks.
+  // Collect the station's actual mesh objects for triangle-accurate collision (no
+  // AABB boxes — they over-cover rotated geometry and create invisible walls).
+  // Also derive the dock radius from the overall bounds so docking triggers before
+  // the hull blocks the ship.
   private registerHull(g: THREE.Group): void {
     g.updateMatrixWorld(true);
+    const meshes: THREE.Mesh[] = [];
     const whole = new THREE.Box3();
     g.traverse((o) => {
       const m = o as THREE.Mesh;
       if (!m.isMesh || !m.geometry) return;
-      const box = new THREE.Box3().setFromObject(m);
-      this.collision.addBox(box);
-      whole.union(box);
+      meshes.push(m);
+      whole.expandByObject(m);
     });
+    this.collision.setStationMeshes(meshes);
     if (!whole.isEmpty()) {
       this.dockRadius = whole.getBoundingSphere(new THREE.Sphere()).radius + 40;
     }
